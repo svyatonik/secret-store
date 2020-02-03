@@ -39,6 +39,8 @@ pub struct KeyServerImpl {
 /// Secret store key server data.
 pub struct KeyServerCore {
 	cluster: Arc<dyn ClusterClient>,
+	acl_storage: Arc<dyn AclStorage>,
+	key_storage: Arc<dyn KeyStorage>,
 }
 
 impl KeyServerImpl {
@@ -275,8 +277,8 @@ impl KeyServerCore {
 		let cconfig = NetClusterConfiguration {
 			self_key_pair: self_key_pair.clone(),
 			key_server_set: key_server_set,
-			acl_storage: acl_storage,
-			key_storage: key_storage,
+			acl_storage: acl_storage.clone(),
+			key_storage: key_storage.clone(),
 			admin_public: config.admin_public,
 			preserve_sessions: false,
 		};
@@ -292,6 +294,8 @@ impl KeyServerCore {
 
 		Ok(KeyServerCore {
 			cluster,
+			acl_storage,
+			key_storage,
 		})
 	}
 }
@@ -304,6 +308,399 @@ fn return_session<S: ClusterSession>(
 		Err(error) => Box::new(err(error))
 	}
 }
+
+// ### EXTRACT: BEGIN ###
+use futures03::{
+	compat::Future01CompatExt,
+	future::{ready, FutureExt},
+};
+
+impl parity_secretstore_primitives::key_server::KeyServer for KeyServerImpl {
+}
+
+impl parity_secretstore_primitives::key_server::ServerKeyGenerator for KeyServerImpl {
+	type GenerateKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::ServerKeyGenerationResult> + Send>>;
+	type RestoreKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::ServerKeyRetrievalResult> + Send>>;
+
+	fn generate_key(
+		&self,
+		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		key_id: ServerKeyId,
+		author: Requester,
+		threshold: usize,
+	) -> Self::GenerateKeyFuture {
+		let key_server_core = self.data.clone();
+		async move {
+			let session_result = async move {
+				let author_address = author.address(&key_id)?;
+				let session = key_server_core
+					.lock()
+					.cluster
+					.new_generation_session(key_id, origin, author_address, threshold)?;
+				session.into_wait_future()
+					.compat()
+					.await
+			}.await;
+
+			parity_secretstore_primitives::key_server::SessionResult {
+				origin,
+				params: parity_secretstore_primitives::key_server::ServerKeyGenerationParams {
+					key_id,
+				},
+				result: session_result.map(|key| parity_secretstore_primitives::key_server::ServerKeyGenerationArtifacts {
+					key,
+				})
+			}
+		}.boxed()
+	}
+
+	fn restore_key_public(
+		&self,
+		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		key_id: parity_secretstore_primitives::ServerKeyId,
+		requester: Option<Requester>,
+	) -> Self::RestoreKeyFuture {
+		let key_server_core = self.data.clone();
+		async move {
+			let session_result = async move {
+				let requester_address = match requester {
+					Some(requester) => Some(requester.address(&key_id)?),
+					None => None,
+				};
+				let session = key_server_core
+					.lock()
+					.cluster
+					.new_key_version_negotiation_session(key_id)?;
+				let session_core = session.session.clone();
+				let _ = session
+					.into_wait_future()
+					.compat()
+					.await?;
+				session_core
+					.common_key_data()
+					.and_then(|key_share| {
+						let requester_is_author = requester_address
+							.map(|requester_address| requester_address == key_share.author)
+							// TODO: move this check to services
+							// if requester is None, we will return server key unconditionally
+							.unwrap_or(true);
+						if requester_is_author {
+							Ok(key_share)
+						} else {
+							Err(Error::AccessDenied)
+						}
+					})
+			}.await;
+
+			parity_secretstore_primitives::key_server::SessionResult {
+				origin,
+				params: parity_secretstore_primitives::key_server::ServerKeyRetrievalParams {
+					key_id,
+				},
+				result: session_result.map(|key_share| parity_secretstore_primitives::key_server::ServerKeyRetrievalArtifacts {
+					key: key_share.public,
+					threshold: key_share.threshold,
+				})
+			}
+		}.boxed()
+	}
+}
+
+impl parity_secretstore_primitives::key_server::DocumentKeyServer for KeyServerImpl {
+	type StoreDocumentKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyStoreResult> + Send>>;
+	type GenerateDocumentKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyGenerationResult> + Send>>;
+	type RestoreDocumentKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyRetrievalResult> + Send>>;
+	type RestoreDocumentKeyCommonFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyCommonRetrievalResult> + Send>>;
+	type RestoreDocumentKeyShadowFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyShadowRetrievalResult> + Send>>;
+
+	fn store_document_key(
+		&self,
+		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		key_id: ServerKeyId,
+		author: Requester,
+		common_point: Public,
+		encrypted_document_key: Public,
+	) -> Self::StoreDocumentKeyFuture {
+		let key_server_core = self.data.clone();
+		async move {
+			let session_result = async move {
+				let session = key_server_core
+					.lock()
+					.cluster
+					.new_encryption_session(key_id, author, common_point, encrypted_document_key)?;
+				session
+					.into_wait_future()
+					.compat()
+					.await
+			}.await;
+
+			parity_secretstore_primitives::key_server::SessionResult {
+				origin,
+				params: parity_secretstore_primitives::key_server::DocumentKeyStoreParams {
+					key_id,
+				},
+				result: session_result.map(|_| parity_secretstore_primitives::key_server::DocumentKeyStoreArtifacts)
+			}
+		}.boxed()
+	}
+
+	fn generate_document_key(
+		&self,
+		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		key_id: ServerKeyId,
+		author: Requester,
+		threshold: usize,
+	) -> Self::GenerateDocumentKeyFuture {
+		let key_server_core = self.data.clone();
+		async move {
+			let session_result = async move {
+				// recover requestor' public key from signature
+				let author_public = author.public(&key_id)?;
+
+				// generate server key
+				let session = key_server_core
+					.lock()
+					.cluster
+					.new_generation_session(key_id, origin, public_to_address(&author_public), threshold)?;
+				let server_key = session
+					.into_wait_future()
+					.compat()
+					.await?;
+
+				// generate random document key
+				let document_key = math::generate_random_point()?;
+				let encrypted_document_key = math::encrypt_secret(&document_key, &server_key)?;
+
+				// store document key in the storage
+				let session = key_server_core
+					.lock()
+					.cluster
+					.new_encryption_session(
+						key_id,
+						author,
+						encrypted_document_key.common_point,
+						encrypted_document_key.encrypted_point,
+					)?;
+				let _ = session
+					.into_wait_future()
+					.compat()
+					.await?;
+
+				Ok(document_key)
+			}.await;
+
+			parity_secretstore_primitives::key_server::SessionResult {
+				origin,
+				params: parity_secretstore_primitives::key_server::DocumentKeyGenerationParams {
+					key_id,
+				},
+				result: session_result.map(|document_key| parity_secretstore_primitives::key_server::DocumentKeyGenerationArtifacts {
+					document_key,
+				})
+			}
+		}.boxed()
+	}
+
+	fn restore_document_key(
+		&self,
+		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		key_id: ServerKeyId,
+		requester: Requester,
+	) -> Self::RestoreDocumentKeyFuture {
+		let key_server_core = self.data.clone();
+		async move {
+			let requester_copy = requester.clone();
+			let session_result = async move {
+				let session = key_server_core
+					.lock()
+					.cluster
+					.new_decryption_session(key_id, origin, requester, None, false, false)?;
+				session
+					.into_wait_future()
+					.compat()
+					.await
+			}.await;
+
+			parity_secretstore_primitives::key_server::SessionResult {
+				origin,
+				params: parity_secretstore_primitives::key_server::DocumentKeyRetrievalParams {
+					key_id,
+					requester: requester_copy,
+				},
+				result: session_result.map(|document_key| parity_secretstore_primitives::key_server::DocumentKeyRetrievalArtifacts {
+					document_key: document_key.decrypted_secret,
+				})
+			}
+		}.boxed()
+	}
+
+	fn restore_document_key_common(
+		&self,
+		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		key_id: ServerKeyId,
+		requester: Requester,
+	) -> Self::RestoreDocumentKeyCommonFuture {
+		let acl_storage = self.data.lock().acl_storage.clone();
+		let key_storage = self.data.lock().key_storage.clone();
+		let prepare_result = || {
+			let requester_address = requester.address(&key_id)?;
+			let is_allowed = acl_storage.check(requester_address, &key_id)?;
+			if !is_allowed {
+				return Err(Error::AccessDenied);
+			}
+
+			let key_share = key_storage.get(&key_id)
+				.and_then(|key_share| key_share.ok_or(Error::ServerKeyIsNotFound))?;
+			let common_point = key_share.common_point.ok_or(Error::DocumentKeyIsNotFound)?;
+			let common_point = math::make_common_shadow_point(key_share.threshold, common_point)?;
+			Ok((key_share.threshold, common_point))
+		};
+		let session_result = prepare_result();
+
+		ready(parity_secretstore_primitives::key_server::SessionResult {
+			origin,
+			params: parity_secretstore_primitives::key_server::DocumentKeyCommonRetrievalParams {
+				key_id,
+				requester,
+			},
+			result: session_result.map(|(threshold, common_point)| parity_secretstore_primitives::key_server::DocumentKeyCommonRetrievalArtifacts {
+				common_point,
+				threshold,
+			})
+		}).boxed()
+	}
+
+	fn restore_document_key_shadow(
+		&self,
+		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		key_id: ServerKeyId,
+		requester: Requester,
+	) -> Self::RestoreDocumentKeyShadowFuture {
+		let key_server_core = self.data.clone();
+		async move {
+			let requester_copy = requester.clone();
+			let session_result = async move {
+				let session = key_server_core
+					.lock()
+					.cluster
+					.new_decryption_session(key_id, origin, requester, None, true, false)?;
+				let document_key = session
+					.into_wait_future()
+					.compat()
+					.await?;
+				Ok((
+					0, // TODO: document_key.threshold
+					document_key.common_point.ok_or(Error::DocumentKeyIsNotFound)?,
+					document_key.decrypted_secret,
+				))
+			}.await;
+
+			parity_secretstore_primitives::key_server::SessionResult {
+				origin,
+				params: parity_secretstore_primitives::key_server::DocumentKeyShadowRetrievalParams {
+					key_id,
+					requester: requester_copy,
+				},
+				result: session_result.map(|(threshold, common_point, encrypted_document_key)| parity_secretstore_primitives::key_server::DocumentKeyShadowRetrievalArtifacts {
+					threshold,
+					common_point,
+					encrypted_document_key,
+					participants_coefficients: std::collections::BTreeMap::new(), // TODO
+				})
+			}
+		}.boxed()
+	}
+}
+
+impl parity_secretstore_primitives::key_server::MessageSigner for KeyServerImpl {
+	type SignMessageSchnorrFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::SchnorrSigningResult> + Send>>;
+	type SignMessageECDSAFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::EcdsaSigningResult> + Send>>;
+
+	fn sign_message_schnorr(
+		&self,
+		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		key_id: ServerKeyId,
+		requester: Requester,
+		message: parity_secretstore_primitives::H256,
+	) -> Self::SignMessageSchnorrFuture {
+		let key_server_core = self.data.clone();
+		async move {
+			let requester_copy = requester.clone();
+			let session_result = async move {
+				let session = key_server_core
+					.lock()
+					.cluster
+					.new_schnorr_signing_session(key_id, requester, None, message)?; // TODO: pass origin || assert(None)
+				session
+					.into_wait_future()
+					.compat()
+					.await
+			}.await;
+
+			parity_secretstore_primitives::key_server::SessionResult {
+				origin,
+				params: parity_secretstore_primitives::key_server::SchnorrSigningParams {
+					key_id,
+					requester: requester_copy,
+				},
+				result: session_result.map(|(signature_c, signature_s)| parity_secretstore_primitives::key_server::SchnorrSigningArtifacts {
+					signature_c: *signature_c,
+					signature_s: *signature_s,
+				})
+			}
+		}.boxed()
+	}
+
+	fn sign_message_ecdsa(
+		&self,
+		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		key_id: ServerKeyId,
+		requester: Requester,
+		message: parity_secretstore_primitives::H256,
+	) -> Self::SignMessageECDSAFuture {
+		let key_server_core = self.data.clone();
+		async move {
+			let requester_copy = requester.clone();
+			let session_result = async move {
+				let session = key_server_core
+					.lock()
+					.cluster
+					.new_ecdsa_signing_session(key_id, requester, None, message)?; // TODO: pass origin || assert(None)
+				session
+					.into_wait_future()
+					.compat()
+					.await
+			}.await;
+
+			parity_secretstore_primitives::key_server::SessionResult {
+				origin,
+				params: parity_secretstore_primitives::key_server::EcdsaSigningParams {
+					key_id,
+					requester: requester_copy,
+				},
+				result: session_result.map(|signature| parity_secretstore_primitives::key_server::EcdsaSigningArtifacts {
+					signature,
+				})
+			}
+		}.boxed()
+	}
+}
+
+impl parity_secretstore_primitives::key_server::AdminSessionsServer for KeyServerImpl {
+	type ChangeServersSetFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::SessionResult<(), ()>> + Send>>;
+
+	fn change_servers_set(
+		&self,
+		_origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		_old_set_signature: parity_secretstore_primitives::Signature,
+		_new_set_signature: parity_secretstore_primitives::Signature,
+		_new_servers_set: BTreeSet<parity_secretstore_primitives::KeyServerPublic>,
+	) -> Self::ChangeServersSetFuture {
+		unimplemented!("TODO")
+	}
+}
+
+// ### EXTRACT: END ###
 
 #[cfg(test)]
 pub mod tests {
