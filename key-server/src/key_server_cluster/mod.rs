@@ -18,7 +18,6 @@ use super::types::ServerKeyId;
 
 pub use super::blockchain::SigningKeyPair;
 pub use super::types::{Error, NodeId, Requester, EncryptedDocumentKeyShadow};
-pub use super::key_storage::{KeyStorage, DocumentKeyShare, DocumentKeyShareVersion};
 pub use super::serialization::{SerializableSignature, SerializableH256, SerializableSecret, SerializablePublic,
 	SerializableRequester, SerializableMessageHash, SerializableAddress};
 pub use self::cluster::{new_network_cluster, ClusterCore, ClusterConfiguration, ClusterClient};
@@ -29,8 +28,6 @@ pub use self::cluster::tests::DummyClusterClient;
 
 #[cfg(test)]
 pub use super::node_key_pair::PlainNodeKeyPair;
-#[cfg(test)]
-pub use super::key_storage::tests::DummyKeyStorage;
 
 pub type SessionId = ServerKeyId;
 

@@ -20,7 +20,8 @@ use std::collections::BTreeMap;
 use parking_lot::RwLock;
 use parity_crypto::publickey::Public;
 use parity_secretstore_primitives::acl_storage::AclStorage;
-use crate::key_server_cluster::{Error, NodeId, SessionId, Requester, KeyStorage, DocumentKeyShare, SessionMeta};
+use parity_secretstore_primitives::key_storage::{KeyStorage, KeyShare};
+use crate::key_server_cluster::{Error, NodeId, SessionId, Requester, SessionMeta};
 use crate::key_server_cluster::cluster::{Cluster, ClusterConfiguration};
 use crate::key_server_cluster::connection_trigger::ServersSetChangeSessionCreatorConnector;
 use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, SessionIdWithSubSession,
@@ -123,7 +124,7 @@ impl SessionCreatorCore {
 	}
 
 	/// Read key share && remove disconnected nodes.
-	fn read_key_share(&self, key_id: &SessionId) -> Result<Option<DocumentKeyShare>, Error> {
+	fn read_key_share(&self, key_id: &SessionId) -> Result<Option<KeyShare>, Error> {
 		self.key_storage.get(key_id)
 	}
 }

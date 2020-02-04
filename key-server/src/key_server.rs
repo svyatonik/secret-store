@@ -23,7 +23,7 @@ use parity_crypto::publickey::public_to_address;
 use parity_runtime::Executor;
 use parity_secretstore_primitives::acl_storage::AclStorage;
 use parity_secretstore_primitives::key_server_set::KeyServerSet;
-use super::key_storage::KeyStorage;
+use parity_secretstore_primitives::key_storage::KeyStorage;
 use crate::blockchain::SigningKeyPair;
 use crate::key_server_cluster::{math, new_network_cluster, ClusterSession, WaitableSession};
 use crate::traits::{AdminSessionsServer, ServerKeyGenerator, DocumentKeyServer, MessageSigner, KeyServer};
@@ -715,8 +715,7 @@ pub mod tests {
 	use parity_crypto::publickey::{Secret, Random, Generator, verify_public};
 	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
 	use parity_secretstore_primitives::key_server_set::InMemoryKeyServerSet;
-	use crate::key_storage::KeyStorage;
-	use crate::key_storage::tests::DummyKeyStorage;
+	use parity_secretstore_primitives::key_storage::{InMemoryKeyStorage, KeyStorage};
 	use crate::node_key_pair::PlainNodeKeyPair;
 	use crate::key_server_cluster::math;
 	use ethereum_types::{H256, H520};
@@ -819,7 +818,7 @@ pub mod tests {
 		}
 	}
 
-	fn make_key_servers(start_port: u16, num_nodes: usize) -> (Vec<KeyServerImpl>, Vec<Arc<DummyKeyStorage>>, Runtime) {
+	fn make_key_servers(start_port: u16, num_nodes: usize) -> (Vec<KeyServerImpl>, Vec<Arc<InMemoryKeyStorage>>, Runtime) {
 		let key_pairs: Vec<_> = (0..num_nodes).map(|_| Random.generate().unwrap()).collect();
 		let configs: Vec<_> = (0..num_nodes).map(|i| ClusterConfiguration {
 				listener_address: NodeAddress {
@@ -839,7 +838,7 @@ pub mod tests {
 		let key_servers_set: BTreeMap<Public, SocketAddr> = configs[0].nodes.iter()
 			.map(|(k, a)| (k.clone(), format!("{}:{}", a.address, a.port).parse().unwrap()))
 			.collect();
-		let key_storages = (0..num_nodes).map(|_| Arc::new(DummyKeyStorage::default())).collect::<Vec<_>>();
+		let key_storages = (0..num_nodes).map(|_| Arc::new(InMemoryKeyStorage::default())).collect::<Vec<_>>();
 		let runtime = Runtime::with_thread_count(4);
 		let key_servers: Vec<_> = configs.into_iter().enumerate().map(|(i, cfg)|
 			KeyServerImpl::new(&cfg, Arc::new(InMemoryKeyServerSet::new(false, key_servers_set.clone())),

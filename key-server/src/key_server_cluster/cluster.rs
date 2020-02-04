@@ -23,8 +23,9 @@ use parity_runtime::Executor;
 use log::trace;
 use parity_secretstore_primitives::acl_storage::AclStorage;
 use parity_secretstore_primitives::key_server_set::KeyServerSet;
+use parity_secretstore_primitives::key_storage::KeyStorage;
 use crate::blockchain::SigningKeyPair;
-use crate::key_server_cluster::{Error, NodeId, SessionId, Requester, KeyStorage};
+use crate::key_server_cluster::{Error, NodeId, SessionId, Requester};
 use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, AdminSession, ClusterSessions,
 	SessionIdWithSubSession, ClusterSessionsContainer, SERVERS_SET_CHANGE_SESSION_ID, create_cluster_view,
 	AdminSessionCreationData, ClusterSessionsListener};
@@ -662,8 +663,9 @@ pub mod tests {
 	use parity_crypto::publickey::{Random, Generator, Public, Signature, sign};
 	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
 	use parity_secretstore_primitives::key_server_set::InMemoryKeyServerSet;
+	use parity_secretstore_primitives::key_storage::InMemoryKeyStorage;
 	use crate::blockchain::SigningKeyPair;
-	use crate::key_server_cluster::{NodeId, SessionId, Requester, Error, DummyKeyStorage, PlainNodeKeyPair};
+	use crate::key_server_cluster::{NodeId, SessionId, Requester, Error, PlainNodeKeyPair};
 	use crate::key_server_cluster::message::Message;
 	use crate::key_server_cluster::cluster::{new_test_cluster, Cluster, ClusterCore, ClusterConfiguration, ClusterClient};
 	use crate::key_server_cluster::cluster_connections::ConnectionManager;
@@ -842,7 +844,7 @@ pub mod tests {
 		preserve_sessions: bool,
 		key_pairs_map: BTreeMap<NodeId, Arc<PlainNodeKeyPair>>,
 		acl_storages_map: BTreeMap<NodeId, Arc<InMemoryPermissiveAclStorage>>,
-		key_storages_map: BTreeMap<NodeId, Arc<DummyKeyStorage>>,
+		key_storages_map: BTreeMap<NodeId, Arc<InMemoryKeyStorage>>,
 		clusters_map: BTreeMap<NodeId, Arc<ClusterCore<Arc<TestConnections>>>>,
 	}
 
@@ -874,17 +876,17 @@ pub mod tests {
 		}
 
 		/// Get keys storage reference by its index.
-		pub fn key_storage(&self, idx: usize) -> &Arc<DummyKeyStorage> {
+		pub fn key_storage(&self, idx: usize) -> &Arc<InMemoryKeyStorage> {
 			self.key_storages_map.values().nth(idx).unwrap()
 		}
 
 		/// Get keys storage reference by node id.
-		pub fn key_storage_of(&self, node: &NodeId) -> &Arc<DummyKeyStorage> {
+		pub fn key_storage_of(&self, node: &NodeId) -> &Arc<InMemoryKeyStorage> {
 			&self.key_storages_map[node]
 		}
 
 		/// Replace key storage of the node by its id.
-		pub fn replace_key_storage_of(&mut self, node: &NodeId, key_storage: Arc<DummyKeyStorage>) {
+		pub fn replace_key_storage_of(&mut self, node: &NodeId, key_storage: Arc<InMemoryKeyStorage>) {
 			*self.key_storages_map.get_mut(node).unwrap() = key_storage;
 		}
 
@@ -931,7 +933,7 @@ pub mod tests {
 
 		/// Include new node to the cluster.
 		pub fn include(&mut self, node_key_pair: Arc<PlainNodeKeyPair>) -> usize {
-			let key_storage = Arc::new(DummyKeyStorage::default());
+			let key_storage = Arc::new(InMemoryKeyStorage::default());
 			let acl_storage = Arc::new(InMemoryPermissiveAclStorage::default());
 			let cluster_params = ClusterConfiguration {
 				self_key_pair: node_key_pair.clone(),
@@ -1007,7 +1009,7 @@ pub mod tests {
 		let messages = Arc::new(Mutex::new(VecDeque::new()));
 		let key_pairs: Vec<_> = (0..num_nodes)
 			.map(|_| Arc::new(PlainNodeKeyPair::new(Random.generate().unwrap()))).collect();
-		let key_storages: Vec<_> = (0..num_nodes).map(|_| Arc::new(DummyKeyStorage::default())).collect();
+		let key_storages: Vec<_> = (0..num_nodes).map(|_| Arc::new(InMemoryKeyStorage::default())).collect();
 		let acl_storages: Vec<_> = (0..num_nodes).map(|_| Arc::new(InMemoryPermissiveAclStorage::default())).collect();
 		let cluster_params: Vec<_> = (0..num_nodes).map(|i| ClusterConfiguration {
 			self_key_pair: key_pairs[i].clone(),

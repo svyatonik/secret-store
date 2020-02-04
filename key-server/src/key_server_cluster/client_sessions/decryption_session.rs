@@ -22,7 +22,8 @@ use ethereum_types::{Address, H256};
 use log::warn;
 use parity_crypto::publickey::Secret;
 use parity_secretstore_primitives::acl_storage::AclStorage;
-use crate::key_server_cluster::{Error, DocumentKeyShare, NodeId, SessionId, Requester,
+use parity_secretstore_primitives::key_storage::KeyShare;
+use crate::key_server_cluster::{Error, NodeId, SessionId, Requester,
 	EncryptedDocumentKeyShadow, SessionMeta};
 use crate::key_server_cluster::cluster::Cluster;
 use crate::key_server_cluster::cluster_sessions::{SessionIdWithSubSession, ClusterSession, CompletionSignal};
@@ -56,7 +57,7 @@ struct SessionCore {
 	/// Decryption session access key.
 	pub access_key: Secret,
 	/// Key share.
-	pub key_share: Option<DocumentKeyShare>,
+	pub key_share: Option<KeyShare>,
 	/// Cluster which allows this node to send messages to other nodes in the cluster.
 	pub cluster: Arc<dyn Cluster>,
 	/// Session-level nonce.
@@ -98,7 +99,7 @@ pub struct SessionParams {
 	/// Session access key.
 	pub access_key: Secret,
 	/// Key share.
-	pub key_share: Option<DocumentKeyShare>,
+	pub key_share: Option<KeyShare>,
 	/// ACL storage.
 	pub acl_storage: Arc<dyn AclStorage>,
 	/// Cluster.
@@ -848,7 +849,8 @@ mod tests {
 	use std::collections::{BTreeMap, VecDeque};
 	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
 	use parity_crypto::publickey::{KeyPair, Random, Generator, Public, Secret, public_to_address};
-	use crate::key_server_cluster::{NodeId, DocumentKeyShare, DocumentKeyShareVersion, SessionId, Requester,
+	use parity_secretstore_primitives::key_storage::{KeyShare, KeyShareVersion};
+	use crate::key_server_cluster::{NodeId, SessionId, Requester,
 		Error, EncryptedDocumentKeyShadow, SessionMeta};
 	use crate::key_server_cluster::cluster::tests::DummyCluster;
 	use crate::key_server_cluster::cluster_sessions::ClusterSession;
@@ -886,13 +888,13 @@ mod tests {
 		];
 		let common_point: Public = H512::from_str("6962be696e1bcbba8e64cc7fddf140f854835354b5804f3bb95ae5a2799130371b589a131bd39699ac7174ccb35fc4342dab05331202209582fc8f3a40916ab0").unwrap();
 		let encrypted_point: Public = H512::from_str("b07031982bde9890e12eff154765f03c56c3ab646ad47431db5dd2d742a9297679c4c65b998557f8008469afd0c43d40b6c5f6c6a1c7354875da4115237ed87a").unwrap();
-		let encrypted_datas: Vec<_> = (0..5).map(|i| DocumentKeyShare {
+		let encrypted_datas: Vec<_> = (0..5).map(|i| KeyShare {
 			author: Default::default(),
 			threshold: 3,
 			public: Default::default(),
 			common_point: Some(common_point.clone()),
 			encrypted_point: Some(encrypted_point.clone()),
-			versions: vec![DocumentKeyShareVersion {
+			versions: vec![KeyShareVersion {
 				hash: Default::default(),
 				id_numbers: id_numbers.clone().into_iter().collect(),
 				secret_share: secret_shares[i].clone(),
@@ -983,13 +985,13 @@ mod tests {
 				connected_nodes_count: 1,
 			},
 			access_key: Random.generate().unwrap().secret().clone(),
-			key_share: Some(DocumentKeyShare {
+			key_share: Some(KeyShare {
 				author: Default::default(),
 				threshold: 0,
 				public: Default::default(),
 				common_point: Some(Random.generate().unwrap().public().clone()),
 				encrypted_point: Some(Random.generate().unwrap().public().clone()),
-				versions: vec![DocumentKeyShareVersion {
+				versions: vec![KeyShareVersion {
 					hash: Default::default(),
 					id_numbers: nodes,
 					secret_share: Random.generate().unwrap().secret().clone(),
@@ -1043,13 +1045,13 @@ mod tests {
 				connected_nodes_count: 1,
 			},
 			access_key: Random.generate().unwrap().secret().clone(),
-			key_share: Some(DocumentKeyShare {
+			key_share: Some(KeyShare {
 				author: Default::default(),
 				threshold: 2,
 				public: Default::default(),
 				common_point: Some(Random.generate().unwrap().public().clone()),
 				encrypted_point: Some(Random.generate().unwrap().public().clone()),
-				versions: vec![DocumentKeyShareVersion {
+				versions: vec![KeyShareVersion {
 					hash: Default::default(),
 					id_numbers: nodes,
 					secret_share: Random.generate().unwrap().secret().clone(),

@@ -21,7 +21,8 @@ use log::warn;
 use parity_crypto::publickey::{Public, Secret, Signature};
 use futures::Oneshot;
 use parking_lot::Mutex;
-use crate::key_server_cluster::{Error, SessionId, NodeId, DocumentKeyShare, DocumentKeyShareVersion, KeyStorage};
+use parity_secretstore_primitives::key_storage::{KeyShare, KeyShareVersion, KeyStorage};
+use crate::key_server_cluster::{Error, SessionId, NodeId};
 use crate::key_server_cluster::cluster::Cluster;
 use crate::key_server_cluster::cluster_sessions::{ClusterSession, CompletionSignal};
 use crate::key_server_cluster::math;
@@ -66,7 +67,7 @@ struct SessionCore<T: SessionTransport> {
 	/// Session-level nonce.
 	pub nonce: u64,
 	/// Original key share (for old nodes only).
-	pub key_share: Option<DocumentKeyShare>,
+	pub key_share: Option<KeyShare>,
 	/// Session transport to communicate to other cluster nodes.
 	pub transport: T,
 	/// Key storage.
@@ -726,13 +727,13 @@ impl<T> SessionImpl<T> where T: SessionTransport {
 		let secret_share = math::compute_secret_share(secret_subshares.values().map(|ss| ss.as_ref()
 			.expect("complete_session is only called when subshares from all nodes are received; qed")))?;
 
-		let refreshed_key_version = DocumentKeyShareVersion::new(id_numbers.clone().into_iter().map(|(k, v)| (k.clone(),
+		let refreshed_key_version = KeyShareVersion::new(id_numbers.clone().into_iter().map(|(k, v)| (k.clone(),
 			v.expect("id_numbers are checked to have Some value for every consensus group node when consensus is establishe; qed"))).collect(),
 			secret_share);
 		let mut refreshed_key_share = core.key_share.as_ref().cloned().unwrap_or_else(|| {
 			let new_key_share = data.new_key_share.as_ref()
 				.expect("this is new node; on new nodes this field is filled before KRD; session is completed after KRD; qed");
-			DocumentKeyShare {
+			KeyShare {
 				author: new_key_share.author.clone(),
 				threshold: new_key_share.threshold,
 				public: new_key_share.joint_public.clone(),
@@ -890,8 +891,9 @@ impl SessionTransport for IsolatedSessionTransport {
 pub mod tests {
 	use std::collections::BTreeSet;
 	use parity_crypto::publickey::{Random, Generator, Public};
+	use parity_secretstore_primitives::key_storage::KeyStorage;
 	use crate::blockchain::SigningKeyPair;
-	use crate::key_server_cluster::{NodeId, Error, KeyStorage};
+	use crate::key_server_cluster::{NodeId, Error};
 	use crate::key_server_cluster::cluster::tests::MessageLoop as ClusterMessageLoop;
 	use crate::key_server_cluster::servers_set_change_session::tests::{MessageLoop, AdminSessionAdapter, generate_key};
 	use crate::key_server_cluster::admin_sessions::ShareChangeSessionMeta;

@@ -19,15 +19,12 @@ mod types;
 
 mod traits;
 mod key_server;
-mod key_storage;
 mod serialization;
 mod node_key_pair;
 mod blockchain;
 mod migration;
 
 use std::sync::Arc;
-use kvdb::KeyValueDB;
-use kvdb_rocksdb::{Database, DatabaseConfig};
 use parity_runtime::Executor;
 
 pub use crate::types::{ServerKeyId, EncryptedDocumentKey, RequestSignature, Public,
@@ -38,32 +35,18 @@ pub use self::node_key_pair::PlainNodeKeyPair;
 use parity_secretstore_primitives::{
 	acl_storage::AclStorage,
 	key_server_set::KeyServerSet,
+	key_storage::KeyStorage,
 };
-
-/// Open a secret store DB using the given secret store data path. The DB path is one level beneath the data path.
-pub fn open_secretstore_db(data_path: &str) -> Result<Arc<dyn KeyValueDB>, String> {
-	use std::path::PathBuf;
-
-	migration::upgrade_db(data_path).map_err(|e| e.to_string())?;
-
-	let mut db_path = PathBuf::from(data_path);
-	db_path.push("db");
-	let db_path = db_path.to_str().ok_or_else(|| "Invalid secretstore path".to_string())?;
-
-	let config = DatabaseConfig::with_columns(1);
-	Ok(Arc::new(Database::open(&config, &db_path).map_err(|e| format!("Error opening database: {:?}", e))?))
-}
 
 /// Start new key server instance
 pub fn start(
 	self_key_pair: Arc<dyn SigningKeyPair>,
 	config: ServiceConfiguration,
-	db: Arc<dyn KeyValueDB>,
 	executor: Executor,
 	acl_storage: Arc<dyn AclStorage>,
 	key_server_set: Arc<dyn KeyServerSet>,
+	key_storage: Arc<dyn KeyStorage>,
 ) -> Result<Arc<dyn KeyServer>, Error> {
-	let key_storage = Arc::new(key_storage::PersistentKeyStorage::new(db)?);
 	let key_server = Arc::new(key_server::KeyServerImpl::new(&config.cluster_config, key_server_set.clone(), self_key_pair.clone(),
 		acl_storage.clone(), key_storage.clone(), executor.clone())?);
 

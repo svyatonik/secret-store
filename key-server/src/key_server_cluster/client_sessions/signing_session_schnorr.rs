@@ -22,7 +22,8 @@ use parity_crypto::publickey::{Public, Secret};
 use ethereum_types::H256;
 use log::warn;
 use parity_secretstore_primitives::acl_storage::AclStorage;
-use crate::key_server_cluster::{Error, NodeId, SessionId, Requester, SessionMeta, DocumentKeyShare};
+use parity_secretstore_primitives::key_storage::KeyShare;
+use crate::key_server_cluster::{Error, NodeId, SessionId, Requester, SessionMeta};
 use crate::key_server_cluster::cluster::{Cluster};
 use crate::key_server_cluster::cluster_sessions::{SessionIdWithSubSession, ClusterSession, CompletionSignal};
 use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSession, SessionParams as GenerationSessionParams,
@@ -57,7 +58,7 @@ struct SessionCore {
 	/// Signing session access key.
 	pub access_key: Secret,
 	/// Key share.
-	pub key_share: Option<DocumentKeyShare>,
+	pub key_share: Option<KeyShare>,
 	/// Cluster which allows this node to send messages to other nodes in the cluster.
 	pub cluster: Arc<dyn Cluster>,
 	/// Session-level nonce.
@@ -106,7 +107,7 @@ pub struct SessionParams {
 	/// Session access key.
 	pub access_key: Secret,
 	/// Key share.
-	pub key_share: Option<DocumentKeyShare>,
+	pub key_share: Option<KeyShare>,
 	/// ACL storage.
 	pub acl_storage: Arc<dyn AclStorage>,
 	/// Cluster
@@ -823,7 +824,8 @@ mod tests {
 	use ethereum_types::{Address, H256};
 	use parity_crypto::publickey::{Random, Generator, Public, Secret, public_to_address};
 	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
-	use crate::key_server_cluster::{SessionId, Requester, SessionMeta, Error, KeyStorage};
+	use parity_secretstore_primitives::key_storage::KeyStorage;
+	use crate::key_server_cluster::{SessionId, Requester, SessionMeta, Error};
 	use crate::key_server_cluster::cluster::tests::MessageLoop as ClusterMessageLoop;
 	use crate::key_server_cluster::generation_session::tests::MessageLoop as GenerationMessageLoop;
 	use crate::key_server_cluster::math;
