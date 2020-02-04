@@ -671,7 +671,8 @@ mod tests {
 	use std::sync::Arc;
 	use std::sync::atomic::{AtomicUsize, Ordering};
 	use parity_crypto::publickey::{Random, Generator};
-	use crate::key_server_cluster::{Error, DummyAclStorage, DummyKeyStorage, MapKeyServerSet, PlainNodeKeyPair};
+	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
+	use crate::key_server_cluster::{Error, DummyKeyStorage, MapKeyServerSet, PlainNodeKeyPair};
 	use crate::key_server_cluster::cluster::ClusterConfiguration;
 	use crate::key_server_cluster::connection_trigger::SimpleServersSetChangeSessionCreatorConnector;
 	use crate::key_server_cluster::cluster::tests::DummyCluster;
@@ -685,7 +686,7 @@ mod tests {
 			self_key_pair: Arc::new(PlainNodeKeyPair::new(key_pair.clone())),
 			key_server_set: Arc::new(MapKeyServerSet::new(false, vec![(key_pair.public().clone(), format!("127.0.0.1:{}", 100).parse().unwrap())].into_iter().collect())),
 			key_storage: Arc::new(DummyKeyStorage::default()),
-			acl_storage: Arc::new(DummyAclStorage::default()),
+			acl_storage: Arc::new(InMemoryPermissiveAclStorage::default()),
 			admin_public: Some(Random.generate().unwrap().public().clone()),
 			preserve_sessions: false,
 		};

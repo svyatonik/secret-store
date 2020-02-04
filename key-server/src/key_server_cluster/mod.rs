@@ -18,7 +18,6 @@ use super::types::ServerKeyId;
 
 pub use super::blockchain::SigningKeyPair;
 pub use super::types::{Error, NodeId, Requester, EncryptedDocumentKeyShadow};
-pub use super::acl_storage::AclStorage;
 pub use super::key_storage::{KeyStorage, DocumentKeyShare, DocumentKeyShareVersion};
 pub use super::key_server_set::{is_migration_required, KeyServerSet, KeyServerSetSnapshot, KeyServerSetMigration};
 pub use super::serialization::{SerializableSignature, SerializableH256, SerializableSecret, SerializablePublic,
@@ -33,7 +32,6 @@ pub use self::cluster::tests::DummyClusterClient;
 pub use super::node_key_pair::PlainNodeKeyPair;
 #[cfg(test)]
 pub use super::key_storage::tests::DummyKeyStorage;
-pub use super::acl_storage::DummyAclStorage;
 #[cfg(test)]
 pub use super::key_server_set::tests::MapKeyServerSet;
 

@@ -22,7 +22,8 @@ use parking_lot::Mutex;
 use parity_crypto::publickey::{Public, Secret, Signature, sign};
 use ethereum_types::H256;
 use log::warn;
-use crate::key_server_cluster::{Error, NodeId, SessionId, SessionMeta, AclStorage, DocumentKeyShare, Requester};
+use parity_secretstore_primitives::acl_storage::AclStorage;
+use crate::key_server_cluster::{Error, NodeId, SessionId, SessionMeta, DocumentKeyShare, Requester};
 use crate::key_server_cluster::cluster::{Cluster};
 use crate::key_server_cluster::cluster_sessions::{SessionIdWithSubSession, ClusterSession, CompletionSignal};
 use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSession, SessionParams as GenerationSessionParams,
@@ -1151,7 +1152,7 @@ mod tests {
 
 		// we need at least 3-of-4 nodes to agree to reach consensus
 		// let's say 1 of 4 nodes disagee
-		ml.0.acl_storage(1).prohibit(public_to_address(&requester), Default::default());
+		ml.0.acl_storage(1).forbid(public_to_address(&requester), Default::default());
 
 		// then consensus reachable, but single node will disagree
 		ml.ensure_completed();
@@ -1163,7 +1164,7 @@ mod tests {
 
 		// we need at least 3-of-4 nodes to agree to reach consensus
 		// let's say 1 of 4 nodes (here: master) disagee
-		ml.0.acl_storage(0).prohibit(public_to_address(&requester), Default::default());
+		ml.0.acl_storage(0).forbid(public_to_address(&requester), Default::default());
 
 		// then consensus reachable, but single node will disagree
 		ml.ensure_completed();

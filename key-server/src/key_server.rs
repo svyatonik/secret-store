@@ -21,7 +21,7 @@ use parking_lot::Mutex;
 use parity_crypto::DEFAULT_MAC;
 use parity_crypto::publickey::public_to_address;
 use parity_runtime::Executor;
-use super::acl_storage::AclStorage;
+use parity_secretstore_primitives::acl_storage::AclStorage;
 use super::key_storage::KeyStorage;
 use super::key_server_set::KeyServerSet;
 use crate::blockchain::SigningKeyPair;
@@ -398,6 +398,7 @@ impl parity_secretstore_primitives::key_server::ServerKeyGenerator for KeyServer
 					key_id,
 				},
 				result: session_result.map(|key_share| parity_secretstore_primitives::key_server::ServerKeyRetrievalArtifacts {
+					author: key_share.author,
 					key: key_share.public,
 					threshold: key_share.threshold,
 				})
@@ -614,7 +615,7 @@ impl parity_secretstore_primitives::key_server::DocumentKeyServer for KeyServerI
 
 impl parity_secretstore_primitives::key_server::MessageSigner for KeyServerImpl {
 	type SignMessageSchnorrFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::SchnorrSigningResult> + Send>>;
-	type SignMessageECDSAFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::EcdsaSigningResult> + Send>>;
+	type SignMessageEcdsaFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::EcdsaSigningResult> + Send>>;
 
 	fn sign_message_schnorr(
 		&self,
@@ -657,7 +658,7 @@ impl parity_secretstore_primitives::key_server::MessageSigner for KeyServerImpl 
 		key_id: ServerKeyId,
 		requester: Requester,
 		message: parity_secretstore_primitives::H256,
-	) -> Self::SignMessageECDSAFuture {
+	) -> Self::SignMessageEcdsaFuture {
 		let key_server_core = self.data.clone();
 		async move {
 			let requester_copy = requester.clone();
@@ -712,7 +713,7 @@ pub mod tests {
 	use futures::Future;
 	use parity_crypto::DEFAULT_MAC;
 	use parity_crypto::publickey::{Secret, Random, Generator, verify_public};
-	use crate::acl_storage::DummyAclStorage;
+	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
 	use crate::key_storage::KeyStorage;
 	use crate::key_storage::tests::DummyKeyStorage;
 	use crate::node_key_pair::PlainNodeKeyPair;
@@ -843,7 +844,7 @@ pub mod tests {
 		let key_servers: Vec<_> = configs.into_iter().enumerate().map(|(i, cfg)|
 			KeyServerImpl::new(&cfg, Arc::new(MapKeyServerSet::new(false, key_servers_set.clone())),
 				Arc::new(PlainNodeKeyPair::new(key_pairs[i].clone())),
-				Arc::new(DummyAclStorage::default()),
+				Arc::new(InMemoryPermissiveAclStorage::default()),
 				key_storages[i].clone(), runtime.executor()).unwrap()
 		).collect();
 

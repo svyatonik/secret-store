@@ -19,7 +19,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::collections::BTreeMap;
 use parking_lot::RwLock;
 use parity_crypto::publickey::Public;
-use crate::key_server_cluster::{Error, NodeId, SessionId, Requester, AclStorage, KeyStorage, DocumentKeyShare, SessionMeta};
+use parity_secretstore_primitives::acl_storage::AclStorage;
+use crate::key_server_cluster::{Error, NodeId, SessionId, Requester, KeyStorage, DocumentKeyShare, SessionMeta};
 use crate::key_server_cluster::cluster::{Cluster, ClusterConfiguration};
 use crate::key_server_cluster::connection_trigger::ServersSetChangeSessionCreatorConnector;
 use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, SessionIdWithSubSession,

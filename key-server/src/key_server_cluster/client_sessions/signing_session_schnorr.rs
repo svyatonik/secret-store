@@ -21,7 +21,8 @@ use parking_lot::Mutex;
 use parity_crypto::publickey::{Public, Secret};
 use ethereum_types::H256;
 use log::warn;
-use crate::key_server_cluster::{Error, NodeId, SessionId, Requester, SessionMeta, AclStorage, DocumentKeyShare};
+use parity_secretstore_primitives::acl_storage::AclStorage;
+use crate::key_server_cluster::{Error, NodeId, SessionId, Requester, SessionMeta, DocumentKeyShare};
 use crate::key_server_cluster::cluster::{Cluster};
 use crate::key_server_cluster::cluster_sessions::{SessionIdWithSubSession, ClusterSession, CompletionSignal};
 use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSession, SessionParams as GenerationSessionParams,
@@ -821,7 +822,7 @@ mod tests {
 	use std::collections::BTreeMap;
 	use ethereum_types::{Address, H256};
 	use parity_crypto::publickey::{Random, Generator, Public, Secret, public_to_address};
-	use crate::acl_storage::DummyAclStorage;
+	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
 	use crate::key_server_cluster::{SessionId, Requester, SessionMeta, Error, KeyStorage};
 	use crate::key_server_cluster::cluster::tests::MessageLoop as ClusterMessageLoop;
 	use crate::key_server_cluster::generation_session::tests::MessageLoop as GenerationMessageLoop;
@@ -856,7 +857,7 @@ mod tests {
 				},
 				access_key: Random.generate().unwrap().secret().clone(),
 				key_share: self.0.key_storage(at_node).get(&Default::default()).unwrap(),
-				acl_storage: Arc::new(DummyAclStorage::default()),
+				acl_storage: Arc::new(InMemoryPermissiveAclStorage::default()),
 				cluster: self.0.cluster(0).view().unwrap(),
 				nonce: 0,
 			}, requester).unwrap().0
@@ -1057,8 +1058,8 @@ mod tests {
 
 		// we need at least 2-of-3 nodes to agree to reach consensus
 		// let's say 2 of 3 nodes disagee
-		ml.0.acl_storage(1).prohibit(public_to_address(&requester), SessionId::default());
-		ml.0.acl_storage(2).prohibit(public_to_address(&requester), SessionId::default());
+		ml.0.acl_storage(1).forbid(public_to_address(&requester), SessionId::default());
+		ml.0.acl_storage(2).forbid(public_to_address(&requester), SessionId::default());
 
 		// then consensus is unreachable
 		ml.0.loop_until(|| ml.0.is_empty());
@@ -1071,7 +1072,7 @@ mod tests {
 
 		// we need at least 2-of-3 nodes to agree to reach consensus
 		// let's say 1 of 3 nodes disagee
-		ml.0.acl_storage(1).prohibit(public_to_address(&requester), SessionId::default());
+		ml.0.acl_storage(1).forbid(public_to_address(&requester), SessionId::default());
 
 		// then consensus reachable, but single node will disagree
 		ml.ensure_completed();
@@ -1083,7 +1084,7 @@ mod tests {
 
 		// we need at least 2-of-3 nodes to agree to reach consensus
 		// let's say 1 of 3 nodes disagee
-		ml.0.acl_storage(0).prohibit(public_to_address(&requester), SessionId::default());
+		ml.0.acl_storage(0).forbid(public_to_address(&requester), SessionId::default());
 
 		// then consensus reachable, but single node will disagree
 		ml.ensure_completed();

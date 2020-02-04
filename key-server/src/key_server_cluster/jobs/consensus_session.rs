@@ -368,7 +368,8 @@ impl<ConsensusExecutor, ConsensusTransport, ComputationExecutor, ComputationTran
 mod tests {
 	use std::sync::Arc;
 	use parity_crypto::publickey::{KeyPair, Random, Generator, sign, public_to_address};
-	use crate::key_server_cluster::{Error, NodeId, SessionId, Requester, DummyAclStorage};
+	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
+	use crate::key_server_cluster::{Error, NodeId, SessionId, Requester};
 	use crate::key_server_cluster::message::{ConsensusMessage, InitializeConsensusSession, ConfirmConsensusInitialization};
 	use crate::key_server_cluster::jobs::job_session::tests::{make_master_session_meta, make_slave_session_meta, SquaredSumJobExecutor, DummyJobTransport};
 	use crate::key_server_cluster::jobs::key_access_job::KeyAccessJob;
@@ -376,20 +377,20 @@ mod tests {
 
 	type SquaredSumConsensusSession = ConsensusSession<KeyAccessJob, DummyJobTransport<Requester, bool>, SquaredSumJobExecutor, DummyJobTransport<u32, u32>>;
 
-	fn make_master_consensus_session(threshold: usize, requester: Option<KeyPair>, acl_storage: Option<DummyAclStorage>) -> SquaredSumConsensusSession {
+	fn make_master_consensus_session(threshold: usize, requester: Option<KeyPair>, acl_storage: Option<InMemoryPermissiveAclStorage>) -> SquaredSumConsensusSession {
 		let secret = requester.map(|kp| kp.secret().clone()).unwrap_or(Random.generate().unwrap().secret().clone());
 		SquaredSumConsensusSession::new(ConsensusSessionParams {
 			meta: make_master_session_meta(threshold),
-			consensus_executor: KeyAccessJob::new_on_master(SessionId::default(), Arc::new(acl_storage.unwrap_or(DummyAclStorage::default())),
+			consensus_executor: KeyAccessJob::new_on_master(SessionId::default(), Arc::new(acl_storage.unwrap_or(InMemoryPermissiveAclStorage::default())),
 				sign(&secret, &SessionId::default()).unwrap().into()),
 			consensus_transport: DummyJobTransport::default(),
 		}).unwrap()
 	}
 
-	fn make_slave_consensus_session(threshold: usize, acl_storage: Option<DummyAclStorage>) -> SquaredSumConsensusSession {
+	fn make_slave_consensus_session(threshold: usize, acl_storage: Option<InMemoryPermissiveAclStorage>) -> SquaredSumConsensusSession {
 		SquaredSumConsensusSession::new(ConsensusSessionParams {
 			meta: make_slave_session_meta(threshold),
-			consensus_executor: KeyAccessJob::new_on_slave(SessionId::default(), Arc::new(acl_storage.unwrap_or(DummyAclStorage::default()))),
+			consensus_executor: KeyAccessJob::new_on_slave(SessionId::default(), Arc::new(acl_storage.unwrap_or(InMemoryPermissiveAclStorage::default()))),
 			consensus_transport: DummyJobTransport::default(),
 		}).unwrap()
 	}
@@ -419,8 +420,8 @@ mod tests {
 	#[test]
 	fn consensus_session_consensus_is_not_reached_when_initializes_with_zero_threshold_and_master_rejects() {
 		let requester = Random.generate().unwrap();
-		let acl_storage = DummyAclStorage::default();
-		acl_storage.prohibit(public_to_address(requester.public()), SessionId::default());
+		let acl_storage = InMemoryPermissiveAclStorage::default();
+		acl_storage.forbid(public_to_address(requester.public()), SessionId::default());
 
 		let mut session = make_master_consensus_session(0, Some(requester), Some(acl_storage));
 		session.initialize(vec![NodeId::from_low_u64_be(1), NodeId::from_low_u64_be(2)].into_iter().collect()).unwrap();
@@ -434,8 +435,8 @@ mod tests {
 	#[test]
 	fn consensus_session_consensus_is_failed_by_master_node() {
 		let requester = Random.generate().unwrap();
-		let acl_storage = DummyAclStorage::default();
-		acl_storage.prohibit(public_to_address(requester.public()), SessionId::default());
+		let acl_storage = InMemoryPermissiveAclStorage::default();
+		acl_storage.forbid(public_to_address(requester.public()), SessionId::default());
 
 		let mut session = make_master_consensus_session(1, Some(requester), Some(acl_storage));
 		assert_eq!(session.initialize(vec![NodeId::from_low_u64_be(1), NodeId::from_low_u64_be(2)].into_iter().collect()).unwrap_err(), Error::ConsensusUnreachable);
@@ -476,8 +477,8 @@ mod tests {
 	#[test]
 	fn consensus_session_job_dissemination_does_not_select_master_node_if_rejected() {
 		let requester = Random.generate().unwrap();
-		let acl_storage = DummyAclStorage::default();
-		acl_storage.prohibit(public_to_address(requester.public()), SessionId::default());
+		let acl_storage = InMemoryPermissiveAclStorage::default();
+		acl_storage.forbid(public_to_address(requester.public()), SessionId::default());
 
 		let mut session = make_master_consensus_session(0, Some(requester), Some(acl_storage));
 		session.initialize(vec![NodeId::from_low_u64_be(1), NodeId::from_low_u64_be(2)].into_iter().collect()).unwrap();
