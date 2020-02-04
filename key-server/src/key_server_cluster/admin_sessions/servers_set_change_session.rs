@@ -1054,8 +1054,9 @@ pub mod tests {
 	use ethereum_types::H256;
 	use parity_crypto::publickey::{Random, Generator, Public, Signature, KeyPair, sign};
 	use parity_secretstore_primitives::key_storage::KeyStorage;
-	use crate::blockchain::SigningKeyPair;
-	use crate::key_server_cluster::{NodeId, SessionId, Error, PlainNodeKeyPair};
+	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
+	use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
+	use crate::key_server_cluster::{NodeId, SessionId, Error};
 	use crate::key_server_cluster::cluster_sessions::ClusterSession;
 	use crate::key_server_cluster::cluster::tests::MessageLoop as ClusterMessageLoop;
 	use crate::key_server_cluster::generation_session::tests::{MessageLoop as GenerationMessageLoop};
@@ -1205,7 +1206,7 @@ pub mod tests {
 
 			// include new nodes in the cluster
 			for node_key_pair in &add {
-				ml.include(Arc::new(PlainNodeKeyPair::new(node_key_pair.clone())));
+				ml.include(Arc::new(InMemoryKeyServerKeyPair::new(node_key_pair.clone())));
 			}
 			// isolate nodes from the cluster
 			for isolated_node_id in &isolated_nodes_ids {

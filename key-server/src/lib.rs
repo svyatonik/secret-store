@@ -20,7 +20,6 @@ mod types;
 mod traits;
 mod key_server;
 mod serialization;
-mod node_key_pair;
 mod blockchain;
 mod migration;
 
@@ -30,8 +29,7 @@ use parity_runtime::Executor;
 pub use crate::types::{ServerKeyId, EncryptedDocumentKey, RequestSignature, Public,
 	Error, NodeAddress, ServiceConfiguration, ClusterConfiguration};
 pub use crate::traits::KeyServer;
-pub use crate::blockchain::{SecretStoreChain, SigningKeyPair, ContractAddress, BlockId, BlockNumber, NewBlocksNotify, Filter};
-pub use self::node_key_pair::PlainNodeKeyPair;
+pub use crate::blockchain::{SecretStoreChain, ContractAddress, BlockId, BlockNumber, NewBlocksNotify, Filter};
 use parity_secretstore_primitives::{
 	acl_storage::AclStorage,
 	key_server_set::KeyServerSet,
@@ -40,7 +38,7 @@ use parity_secretstore_primitives::{
 
 /// Start new key server instance
 pub fn start(
-	self_key_pair: Arc<dyn SigningKeyPair>,
+	self_key_pair: Arc<dyn parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair>,
 	config: ServiceConfiguration,
 	executor: Executor,
 	acl_storage: Arc<dyn AclStorage>,

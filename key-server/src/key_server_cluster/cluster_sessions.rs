@@ -23,7 +23,7 @@ use lazy_static::lazy_static;
 use parking_lot::{Mutex, RwLock, Condvar};
 use ethereum_types::H256;
 use parity_crypto::publickey::Secret;
-use crate::blockchain::SigningKeyPair;
+use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::key_server_cluster::{Error, NodeId, SessionId};
 use crate::key_server_cluster::cluster::{Cluster, ClusterConfiguration, ClusterView};
 use crate::key_server_cluster::cluster_connections::ConnectionProvider;
@@ -649,7 +649,7 @@ impl<T> CompletionSignal<T> {
 	}
 }
 
-pub fn create_cluster_view(self_key_pair: Arc<dyn SigningKeyPair>, connections: Arc<dyn ConnectionProvider>, requires_all_connections: bool) -> Result<Arc<dyn Cluster>, Error> {
+pub fn create_cluster_view(self_key_pair: Arc<dyn KeyServerKeyPair>, connections: Arc<dyn ConnectionProvider>, requires_all_connections: bool) -> Result<Arc<dyn Cluster>, Error> {
 	let mut connected_nodes = connections.connected_nodes()?;
 	let disconnected_nodes = connections.disconnected_nodes();
 
@@ -674,7 +674,8 @@ mod tests {
 	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
 	use parity_secretstore_primitives::key_server_set::InMemoryKeyServerSet;
 	use parity_secretstore_primitives::key_storage::InMemoryKeyStorage;
-	use crate::key_server_cluster::{Error, PlainNodeKeyPair};
+	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
+	use crate::key_server_cluster::Error;
 	use crate::key_server_cluster::cluster::ClusterConfiguration;
 	use crate::key_server_cluster::connection_trigger::SimpleServersSetChangeSessionCreatorConnector;
 	use crate::key_server_cluster::cluster::tests::DummyCluster;
@@ -685,7 +686,7 @@ mod tests {
 	pub fn make_cluster_sessions() -> ClusterSessions {
 		let key_pair = Random.generate().unwrap();
 		let config = ClusterConfiguration {
-			self_key_pair: Arc::new(PlainNodeKeyPair::new(key_pair.clone())),
+			self_key_pair: Arc::new(InMemoryKeyServerKeyPair::new(key_pair.clone())),
 			key_server_set: Arc::new(InMemoryKeyServerSet::new(false, vec![(key_pair.public().clone(), format!("127.0.0.1:{}", 100).parse().unwrap())].into_iter().collect())),
 			key_storage: Arc::new(InMemoryKeyStorage::default()),
 			acl_storage: Arc::new(InMemoryPermissiveAclStorage::default()),

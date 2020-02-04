@@ -892,7 +892,7 @@ pub mod tests {
 	use std::collections::BTreeSet;
 	use parity_crypto::publickey::{Random, Generator, Public};
 	use parity_secretstore_primitives::key_storage::KeyStorage;
-	use crate::blockchain::SigningKeyPair;
+	use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 	use crate::key_server_cluster::{NodeId, Error};
 	use crate::key_server_cluster::cluster::tests::MessageLoop as ClusterMessageLoop;
 	use crate::key_server_cluster::servers_set_change_session::tests::{MessageLoop, AdminSessionAdapter, generate_key};

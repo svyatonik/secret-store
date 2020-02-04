@@ -27,7 +27,7 @@ use crate::key_server_cluster::cluster_sessions::AdminSession;
 use crate::key_server_cluster::cluster_connections::{Connection};
 use crate::key_server_cluster::cluster_connections_net::{NetConnectionsContainer};
 use crate::types::{Error, NodeId};
-use crate::blockchain::SigningKeyPair;
+use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Describes which maintain() call is required.
@@ -94,7 +94,7 @@ pub enum ConnectionsAction {
 /// Trigger connections.
 pub struct TriggerConnections {
 	/// This node key pair.
-	pub self_key_pair: Arc<dyn SigningKeyPair>,
+	pub self_key_pair: Arc<dyn KeyServerKeyPair>,
 }
 
 impl SimpleConnectionTrigger {
@@ -104,7 +104,7 @@ impl SimpleConnectionTrigger {
 	}
 
 	/// Create new simple connection trigger.
-	pub fn new(key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn SigningKeyPair>, admin_public: Option<Public>) -> Self {
+	pub fn new(key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn KeyServerKeyPair>, admin_public: Option<Public>) -> Self {
 		SimpleConnectionTrigger {
 			key_server_set: key_server_set,
 			connections: TriggerConnections {
@@ -218,7 +218,7 @@ mod tests {
 	use std::sync::Arc;
 	use parity_crypto::publickey::{Random, Generator};
 	use parity_secretstore_primitives::key_server_set::{InMemoryKeyServerSet, KeyServerSetSnapshot, KeyServerSetMigration};
-	use crate::key_server_cluster::{PlainNodeKeyPair};
+	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
 	use crate::key_server_cluster::cluster_connections_net::NetConnectionsContainer;
 	use super::{Maintain, TriggerConnections, ConnectionsAction, ConnectionTrigger, SimpleConnectionTrigger,
 		select_nodes_to_disconnect, adjust_connections};
@@ -233,7 +233,7 @@ mod tests {
 
 	fn create_connections() -> TriggerConnections {
 		TriggerConnections {
-			self_key_pair: Arc::new(PlainNodeKeyPair::new(Random.generate().unwrap())),
+			self_key_pair: Arc::new(InMemoryKeyServerKeyPair::new(Random.generate().unwrap())),
 		}
 	}
 
@@ -387,7 +387,7 @@ mod tests {
 	#[test]
 	fn simple_connections_trigger_only_maintains_connections() {
 		let key_server_set = Arc::new(InMemoryKeyServerSet::new(false, Default::default()));
-		let self_key_pair = Arc::new(PlainNodeKeyPair::new(Random.generate().unwrap()));
+		let self_key_pair = Arc::new(InMemoryKeyServerKeyPair::new(Random.generate().unwrap()));
 		let mut trigger = SimpleConnectionTrigger::new(key_server_set, self_key_pair, None);
 		assert_eq!(trigger.on_maintain(), Some(Maintain::Connections));
 	}

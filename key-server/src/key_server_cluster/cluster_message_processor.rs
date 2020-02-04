@@ -16,7 +16,7 @@
 
 use std::sync::Arc;
 use log::{info, trace, warn};
-use crate::blockchain::SigningKeyPair;
+use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::key_server_cluster::{Error, NodeId};
 use crate::key_server_cluster::cluster::{ServersSetChangeParams, new_servers_set_change_session};
 use crate::key_server_cluster::cluster_sessions::{AdminSession};
@@ -51,7 +51,7 @@ pub trait MessageProcessor: Send + Sync {
 
 /// Bridge between ConnectionManager and ClusterSessions.
 pub struct SessionsMessageProcessor {
-	self_key_pair: Arc<dyn SigningKeyPair>,
+	self_key_pair: Arc<dyn KeyServerKeyPair>,
 	servers_set_change_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>,
 	sessions: Arc<ClusterSessions>,
 	connections: Arc<dyn ConnectionProvider>,
@@ -60,7 +60,7 @@ pub struct SessionsMessageProcessor {
 impl SessionsMessageProcessor {
 	/// Create new instance of SessionsMessageProcessor.
 	pub fn new(
-		self_key_pair: Arc<dyn SigningKeyPair>,
+		self_key_pair: Arc<dyn KeyServerKeyPair>,
 		servers_set_change_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>,
 		sessions: Arc<ClusterSessions>,
 		connections: Arc<dyn ConnectionProvider>,

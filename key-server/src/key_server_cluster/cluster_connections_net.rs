@@ -28,7 +28,7 @@ use tokio::timer::{Interval, timeout::Error as TimeoutError};
 use tokio_io::IoFuture;
 use parity_crypto::publickey::KeyPair;
 use parity_runtime::Executor;
-use crate::blockchain::SigningKeyPair;
+use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::key_server_cluster::{Error, NodeId, ClusterConfiguration};
 use crate::key_server_cluster::cluster_connections::{ConnectionProvider, Connection, ConnectionManager};
 use crate::key_server_cluster::connection_trigger::{Maintain, ConnectionTrigger};
@@ -81,7 +81,7 @@ struct NetConnectionsData {
 	/// Reference to tokio task executor.
 	executor: Executor,
 	/// Key pair of this node.
-	self_key_pair: Arc<dyn SigningKeyPair>,
+	self_key_pair: Arc<dyn KeyServerKeyPair>,
 	/// Network messages processor.
 	message_processor: Arc<dyn MessageProcessor>,
 	/// Connections trigger.

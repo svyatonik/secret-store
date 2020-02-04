@@ -48,16 +48,6 @@ pub enum ContractAddress {
 	Address(ethereum_types::Address),
 }
 
-/// Key pair with signing ability.
-pub trait SigningKeyPair: Send + Sync {
-	/// Public portion of key.
-	fn public(&self) -> &Public;
-	/// Address of key owner.
-	fn address(&self) -> Address;
-	/// Sign data with the key.
-	fn sign(&self, data: &H256) -> Result<Signature, EthKeyError>;
-}
-
 /// Wrapps client ChainNotify in order to send signal about new blocks
 pub trait NewBlocksNotify: Send + Sync {
 	/// Fires when chain has new blocks.

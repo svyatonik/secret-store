@@ -29,12 +29,12 @@ use crate::key_server_cluster::jobs::servers_set_change_access_job::ordered_node
 use crate::key_server_cluster::connection_trigger::{Maintain, ConnectionsAction, ConnectionTrigger,
 	ServersSetChangeSessionCreatorConnector, TriggerConnections};
 use crate::types::{Error, NodeId};
-use crate::blockchain::SigningKeyPair;
+use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 
 /// Key servers set change trigger with automated migration procedure.
 pub struct ConnectionTriggerWithMigration {
 	/// This node key pair.
-	self_key_pair: Arc<dyn SigningKeyPair>,
+	self_key_pair: Arc<dyn KeyServerKeyPair>,
 	/// Key server set.
 	key_server_set: Arc<dyn KeyServerSet>,
 	/// Last server set state.
@@ -106,7 +106,7 @@ struct TriggerSession {
 	/// Servers set change session creator connector.
 	connector: Arc<ServersSetChangeSessionCreatorConnectorWithMigration>,
 	/// This node key pair.
-	self_key_pair: Arc<dyn SigningKeyPair>,
+	self_key_pair: Arc<dyn KeyServerKeyPair>,
 	/// Key server set.
 	key_server_set: Arc<dyn KeyServerSet>,
 }
@@ -118,7 +118,7 @@ impl ConnectionTriggerWithMigration {
 	}
 
 	/// Create new trigge with migration.
-	pub fn new(key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn SigningKeyPair>) -> Self {
+	pub fn new(key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn KeyServerKeyPair>) -> Self {
 		let snapshot = key_server_set.snapshot();
 		let migration = snapshot.migration.clone();
 

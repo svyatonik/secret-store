@@ -28,7 +28,7 @@ use parity_runtime::Executor;
 use parity_secretstore_primitives::acl_storage::AclStorage;
 use parity_secretstore_primitives::key_server_set::KeyServerSet;
 use parity_secretstore_primitives::key_storage::KeyStorage;
-use crate::blockchain::SigningKeyPair;
+use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::key_server_cluster::{math, new_network_cluster, ClusterSession, WaitableSession};
 use crate::traits::{AdminSessionsServer, ServerKeyGenerator, DocumentKeyServer, MessageSigner, KeyServer};
 use crate::types::{Error, Public, RequestSignature, Requester, ServerKeyId, EncryptedDocumentKey, EncryptedDocumentKeyShadow,
@@ -49,7 +49,7 @@ pub struct KeyServerCore {
 
 impl KeyServerImpl {
 	/// Create new key server instance
-	pub fn new(config: &ClusterConfiguration, key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn SigningKeyPair>,
+	pub fn new(config: &ClusterConfiguration, key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn KeyServerKeyPair>,
 		acl_storage: Arc<dyn AclStorage>, key_storage: Arc<dyn KeyStorage>, executor: Executor) -> Result<Self, Error>
 	{
 		Ok(KeyServerImpl {
@@ -64,7 +64,7 @@ impl KeyServerImpl {
 }
 
 impl KeyServerCore {
-	pub fn new(config: &ClusterConfiguration, key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn SigningKeyPair>,
+	pub fn new(config: &ClusterConfiguration, key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn KeyServerKeyPair>,
 		acl_storage: Arc<dyn AclStorage>, key_storage: Arc<dyn KeyStorage>, executor: Executor) -> Result<Self, Error>
 	{
 		let cconfig = NetClusterConfiguration {
@@ -493,7 +493,7 @@ pub mod tests {
 	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
 	use parity_secretstore_primitives::key_server_set::InMemoryKeyServerSet;
 	use parity_secretstore_primitives::key_storage::{InMemoryKeyStorage, KeyStorage};
-	use crate::node_key_pair::PlainNodeKeyPair;
+	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
 	use crate::key_server_cluster::math;
 	use ethereum_types::{H256, H520};
 	use parity_runtime::Runtime;
@@ -651,7 +651,7 @@ pub mod tests {
 		let runtime = Runtime::with_thread_count(4);
 		let key_servers: Vec<_> = configs.into_iter().enumerate().map(|(i, cfg)|
 			KeyServerImpl::new(&cfg, Arc::new(InMemoryKeyServerSet::new(false, key_servers_set.clone())),
-				Arc::new(PlainNodeKeyPair::new(key_pairs[i].clone())),
+				Arc::new(InMemoryKeyServerKeyPair::new(key_pairs[i].clone())),
 				Arc::new(InMemoryPermissiveAclStorage::default()),
 				key_storages[i].clone(), runtime.executor()).unwrap()
 		).collect();
