@@ -24,7 +24,6 @@ mod key_storage;
 mod serialization;
 mod key_server_set;
 mod node_key_pair;
-mod listener;
 mod blockchain;
 mod migration;
 
@@ -55,7 +54,7 @@ pub fn open_secretstore_db(data_path: &str) -> Result<Arc<dyn KeyValueDB>, Strin
 
 /// Start new key server instance
 pub fn start(trusted_client: Arc<dyn SecretStoreChain>, self_key_pair: Arc<dyn SigningKeyPair>, mut config: ServiceConfiguration,
-	db: Arc<dyn KeyValueDB>, executor: Executor) -> Result<Box<dyn KeyServer>, Error>
+	db: Arc<dyn KeyValueDB>, executor: Executor) -> Result<Arc<dyn KeyServer>, Error>
 {
 	let acl_storage: Arc<dyn acl_storage::AclStorage> = match config.acl_check_contract_address.take() {
 		Some(acl_check_contract_address) => acl_storage::OnChainAclStorage::new(trusted_client.clone(), acl_check_contract_address)?,
@@ -67,74 +66,6 @@ pub fn start(trusted_client: Arc<dyn SecretStoreChain>, self_key_pair: Arc<dyn S
 	let key_storage = Arc::new(key_storage::PersistentKeyStorage::new(db)?);
 	let key_server = Arc::new(key_server::KeyServerImpl::new(&config.cluster_config, key_server_set.clone(), self_key_pair.clone(),
 		acl_storage.clone(), key_storage.clone(), executor.clone())?);
-	let cluster = key_server.cluster();
-	let key_server: Arc<dyn KeyServer> = key_server;
 
-	// prepare HTTP listener
-	let http_listener = match config.listener_address {
-		Some(listener_address) => Some(listener::http_listener::KeyServerHttpListener::start(listener_address, config.cors, Arc::downgrade(&key_server), executor)?),
-		None => None,
-	};
-
-	// prepare service contract listeners
-	let create_service_contract = |address, name, api_mask|
-		Arc::new(listener::service_contract::OnChainServiceContract::new(
-			api_mask,
-			trusted_client.clone(),
-			name,
-			address,
-			self_key_pair.clone()));
-
-	let mut contracts: Vec<Arc<dyn listener::service_contract::ServiceContract>> = Vec::new();
-	config.service_contract_address.map(|address|
-		create_service_contract(address,
-			listener::service_contract::SERVICE_CONTRACT_REGISTRY_NAME.to_owned(),
-			listener::ApiMask::all()))
-		.map(|l| contracts.push(l));
-	config.service_contract_srv_gen_address.map(|address|
-		create_service_contract(address,
-			listener::service_contract::SRV_KEY_GEN_SERVICE_CONTRACT_REGISTRY_NAME.to_owned(),
-			listener::ApiMask { server_key_generation_requests: true, ..Default::default() }))
-		.map(|l| contracts.push(l));
-	config.service_contract_srv_retr_address.map(|address|
-		create_service_contract(address,
-			listener::service_contract::SRV_KEY_RETR_SERVICE_CONTRACT_REGISTRY_NAME.to_owned(),
-			listener::ApiMask { server_key_retrieval_requests: true, ..Default::default() }))
-		.map(|l| contracts.push(l));
-	config.service_contract_doc_store_address.map(|address|
-		create_service_contract(address,
-			listener::service_contract::DOC_KEY_STORE_SERVICE_CONTRACT_REGISTRY_NAME.to_owned(),
-			listener::ApiMask { document_key_store_requests: true, ..Default::default() }))
-		.map(|l| contracts.push(l));
-	config.service_contract_doc_sretr_address.map(|address|
-		create_service_contract(address,
-			listener::service_contract::DOC_KEY_SRETR_SERVICE_CONTRACT_REGISTRY_NAME.to_owned(),
-			listener::ApiMask { document_key_shadow_retrieval_requests: true, ..Default::default() }))
-		.map(|l| contracts.push(l));
-
-	let contract: Option<Arc<dyn listener::service_contract::ServiceContract>> = match contracts.len() {
-		0 => None,
-		1 => Some(contracts.pop().expect("contract.len() is 1; qed")),
-		_ => Some(Arc::new(listener::service_contract_aggregate::OnChainServiceContractAggregate::new(contracts))),
-	};
-
-	let contract_listener = match contract {
-		Some(contract) => Some({
-			let listener = listener::service_contract_listener::ServiceContractListener::new(
-				listener::service_contract_listener::ServiceContractListenerParams {
-					contract: contract,
-					self_key_pair: self_key_pair.clone(),
-					key_server_set: key_server_set,
-					acl_storage: acl_storage,
-					cluster: cluster,
-					key_storage: key_storage,
-				}
-			)?;
-			trusted_client.add_listener(listener.clone());
-			listener
-		}),
-		None => None,
-	};
-
-	Ok(Box::new(listener::Listener::new(key_server, http_listener, contract_listener)))
+	Ok(key_server)
 }
