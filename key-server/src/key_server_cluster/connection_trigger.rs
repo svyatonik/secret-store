@@ -21,7 +21,7 @@ use std::sync::Arc;
 use log::trace;
 use ethereum_types::H256;
 use parity_crypto::publickey::Public;
-use crate::key_server_cluster::{KeyServerSet, KeyServerSetSnapshot};
+use parity_secretstore_primitives::key_server_set::{KeyServerSet, KeyServerSetSnapshot};
 use crate::key_server_cluster::cluster::{ClusterConfiguration, ServersSetChangeParams};
 use crate::key_server_cluster::cluster_sessions::AdminSession;
 use crate::key_server_cluster::cluster_connections::{Connection};
@@ -217,7 +217,8 @@ mod tests {
 	use std::collections::BTreeSet;
 	use std::sync::Arc;
 	use parity_crypto::publickey::{Random, Generator};
-	use crate::key_server_cluster::{MapKeyServerSet, PlainNodeKeyPair, KeyServerSetSnapshot, KeyServerSetMigration};
+	use parity_secretstore_primitives::key_server_set::{InMemoryKeyServerSet, KeyServerSetSnapshot, KeyServerSetMigration};
+	use crate::key_server_cluster::{PlainNodeKeyPair};
 	use crate::key_server_cluster::cluster_connections_net::NetConnectionsContainer;
 	use super::{Maintain, TriggerConnections, ConnectionsAction, ConnectionTrigger, SimpleConnectionTrigger,
 		select_nodes_to_disconnect, adjust_connections};
@@ -385,7 +386,7 @@ mod tests {
 
 	#[test]
 	fn simple_connections_trigger_only_maintains_connections() {
-		let key_server_set = Arc::new(MapKeyServerSet::new(false, Default::default()));
+		let key_server_set = Arc::new(InMemoryKeyServerSet::new(false, Default::default()));
 		let self_key_pair = Arc::new(PlainNodeKeyPair::new(Random.generate().unwrap()));
 		let mut trigger = SimpleConnectionTrigger::new(key_server_set, self_key_pair, None);
 		assert_eq!(trigger.on_maintain(), Some(Maintain::Connections));

@@ -21,7 +21,6 @@ mod traits;
 mod key_server;
 mod key_storage;
 mod serialization;
-mod key_server_set;
 mod node_key_pair;
 mod blockchain;
 mod migration;
@@ -36,7 +35,10 @@ pub use crate::types::{ServerKeyId, EncryptedDocumentKey, RequestSignature, Publ
 pub use crate::traits::KeyServer;
 pub use crate::blockchain::{SecretStoreChain, SigningKeyPair, ContractAddress, BlockId, BlockNumber, NewBlocksNotify, Filter};
 pub use self::node_key_pair::PlainNodeKeyPair;
-use parity_secretstore_primitives::acl_storage::AclStorage;
+use parity_secretstore_primitives::{
+	acl_storage::AclStorage,
+	key_server_set::KeyServerSet,
+};
 
 /// Open a secret store DB using the given secret store data path. The DB path is one level beneath the data path.
 pub fn open_secretstore_db(data_path: &str) -> Result<Arc<dyn KeyValueDB>, String> {
@@ -54,15 +56,13 @@ pub fn open_secretstore_db(data_path: &str) -> Result<Arc<dyn KeyValueDB>, Strin
 
 /// Start new key server instance
 pub fn start(
-	trusted_client: Arc<dyn SecretStoreChain>,
 	self_key_pair: Arc<dyn SigningKeyPair>,
-	mut config: ServiceConfiguration,
+	config: ServiceConfiguration,
 	db: Arc<dyn KeyValueDB>,
 	executor: Executor,
 	acl_storage: Arc<dyn AclStorage>,
+	key_server_set: Arc<dyn KeyServerSet>,
 ) -> Result<Arc<dyn KeyServer>, Error> {
-	let key_server_set = key_server_set::OnChainKeyServerSet::new(trusted_client.clone(), config.cluster_config.key_server_set_contract_address.take(),
-		self_key_pair.clone(), config.cluster_config.auto_migrate_enabled, config.cluster_config.nodes.clone())?;
 	let key_storage = Arc::new(key_storage::PersistentKeyStorage::new(db)?);
 	let key_server = Arc::new(key_server::KeyServerImpl::new(&config.cluster_config, key_server_set.clone(), self_key_pair.clone(),
 		acl_storage.clone(), key_storage.clone(), executor.clone())?);

@@ -21,7 +21,7 @@ use ethereum_types::H256;
 use log::{trace, warn};
 use parity_crypto::publickey::Public;
 use parking_lot::Mutex;
-use crate::key_server_cluster::{KeyServerSet, KeyServerSetSnapshot, KeyServerSetMigration, is_migration_required};
+use parity_secretstore_primitives::key_server_set::{KeyServerSet, KeyServerSetSnapshot, KeyServerSetMigration};
 use crate::key_server_cluster::cluster::{ClusterConfiguration, ServersSetChangeParams};
 use crate::key_server_cluster::cluster_connections_net::NetConnectionsContainer;
 use crate::key_server_cluster::cluster_sessions::{AdminSession, ClusterSession};
@@ -448,9 +448,17 @@ fn select_master_node(snapshot: &KeyServerSetSnapshot) -> &NodeId {
 	}
 }
 
+/// Check if two sets are equal (in terms of migration requirements). We do not need migration if only
+/// addresses are changed - simply adjusting connections is enough in this case.
+fn is_migration_required(current_set: &BTreeMap<NodeId, SocketAddr>, new_set: &BTreeMap<NodeId, SocketAddr>) -> bool {
+	let no_nodes_removed = current_set.keys().all(|n| new_set.contains_key(n));
+	let no_nodes_added = new_set.keys().all(|n| current_set.contains_key(n));
+	!no_nodes_removed || !no_nodes_added
+}
+
 #[cfg(test)]
 mod tests {
-	use crate::key_server_cluster::{KeyServerSetSnapshot, KeyServerSetMigration};
+	use parity_secretstore_primitives::key_server_set::{KeyServerSetSnapshot, KeyServerSetMigration};
 	use crate::key_server_cluster::connection_trigger::ConnectionsAction;
 	use super::{MigrationState, SessionState, SessionAction, migration_state, maintain_session,
 		maintain_connections, select_master_node};

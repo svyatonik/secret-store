@@ -22,8 +22,9 @@ use ethereum_types::{Address, H256};
 use parity_runtime::Executor;
 use log::trace;
 use parity_secretstore_primitives::acl_storage::AclStorage;
+use parity_secretstore_primitives::key_server_set::KeyServerSet;
 use crate::blockchain::SigningKeyPair;
-use crate::key_server_cluster::{Error, NodeId, SessionId, Requester, KeyStorage, KeyServerSet};
+use crate::key_server_cluster::{Error, NodeId, SessionId, Requester, KeyStorage};
 use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, AdminSession, ClusterSessions,
 	SessionIdWithSubSession, ClusterSessionsContainer, SERVERS_SET_CHANGE_SESSION_ID, create_cluster_view,
 	AdminSessionCreationData, ClusterSessionsListener};
@@ -660,9 +661,9 @@ pub mod tests {
 	use ethereum_types::{Address, H256};
 	use parity_crypto::publickey::{Random, Generator, Public, Signature, sign};
 	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
+	use parity_secretstore_primitives::key_server_set::InMemoryKeyServerSet;
 	use crate::blockchain::SigningKeyPair;
-	use crate::key_server_cluster::{NodeId, SessionId, Requester, Error, DummyKeyStorage,
-		MapKeyServerSet, PlainNodeKeyPair};
+	use crate::key_server_cluster::{NodeId, SessionId, Requester, Error, DummyKeyStorage, PlainNodeKeyPair};
 	use crate::key_server_cluster::message::Message;
 	use crate::key_server_cluster::cluster::{new_test_cluster, Cluster, ClusterCore, ClusterConfiguration, ClusterClient};
 	use crate::key_server_cluster::cluster_connections::ConnectionManager;
@@ -934,7 +935,7 @@ pub mod tests {
 			let acl_storage = Arc::new(InMemoryPermissiveAclStorage::default());
 			let cluster_params = ClusterConfiguration {
 				self_key_pair: node_key_pair.clone(),
-				key_server_set: Arc::new(MapKeyServerSet::new(false, self.nodes().iter()
+				key_server_set: Arc::new(InMemoryKeyServerSet::new(false, self.nodes().iter()
 					.chain(::std::iter::once(node_key_pair.public()))
 					.map(|n| (*n, format!("127.0.0.1:{}", 13).parse().unwrap()))
 					.collect())),
@@ -1010,7 +1011,7 @@ pub mod tests {
 		let acl_storages: Vec<_> = (0..num_nodes).map(|_| Arc::new(InMemoryPermissiveAclStorage::default())).collect();
 		let cluster_params: Vec<_> = (0..num_nodes).map(|i| ClusterConfiguration {
 			self_key_pair: key_pairs[i].clone(),
-			key_server_set: Arc::new(MapKeyServerSet::new(false, key_pairs.iter().enumerate()
+			key_server_set: Arc::new(InMemoryKeyServerSet::new(false, key_pairs.iter().enumerate()
 				.map(|(j, kp)| (*kp.public(), format!("127.0.0.1:{}", ports_begin + j as u16).parse().unwrap()))
 				.collect())),
 			key_storage: key_storages[i].clone(),

@@ -22,8 +22,8 @@ use parity_crypto::DEFAULT_MAC;
 use parity_crypto::publickey::public_to_address;
 use parity_runtime::Executor;
 use parity_secretstore_primitives::acl_storage::AclStorage;
+use parity_secretstore_primitives::key_server_set::KeyServerSet;
 use super::key_storage::KeyStorage;
-use super::key_server_set::KeyServerSet;
 use crate::blockchain::SigningKeyPair;
 use crate::key_server_cluster::{math, new_network_cluster, ClusterSession, WaitableSession};
 use crate::traits::{AdminSessionsServer, ServerKeyGenerator, DocumentKeyServer, MessageSigner, KeyServer};
@@ -714,10 +714,10 @@ pub mod tests {
 	use parity_crypto::DEFAULT_MAC;
 	use parity_crypto::publickey::{Secret, Random, Generator, verify_public};
 	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
+	use parity_secretstore_primitives::key_server_set::InMemoryKeyServerSet;
 	use crate::key_storage::KeyStorage;
 	use crate::key_storage::tests::DummyKeyStorage;
 	use crate::node_key_pair::PlainNodeKeyPair;
-	use crate::key_server_set::tests::MapKeyServerSet;
 	use crate::key_server_cluster::math;
 	use ethereum_types::{H256, H520};
 	use parity_runtime::Runtime;
@@ -842,7 +842,7 @@ pub mod tests {
 		let key_storages = (0..num_nodes).map(|_| Arc::new(DummyKeyStorage::default())).collect::<Vec<_>>();
 		let runtime = Runtime::with_thread_count(4);
 		let key_servers: Vec<_> = configs.into_iter().enumerate().map(|(i, cfg)|
-			KeyServerImpl::new(&cfg, Arc::new(MapKeyServerSet::new(false, key_servers_set.clone())),
+			KeyServerImpl::new(&cfg, Arc::new(InMemoryKeyServerSet::new(false, key_servers_set.clone())),
 				Arc::new(PlainNodeKeyPair::new(key_pairs[i].clone())),
 				Arc::new(InMemoryPermissiveAclStorage::default()),
 				key_storages[i].clone(), runtime.executor()).unwrap()
