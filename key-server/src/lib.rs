@@ -46,7 +46,7 @@ pub fn start(
 	acl_storage: Arc<dyn AclStorage>,
 	key_server_set: Arc<dyn KeyServerSet>,
 	key_storage: Arc<dyn KeyStorage>,
-) -> Result<Arc<dyn KeyServer>, Error> {
+) -> Result<Arc<key_server::KeyServerImpl>, Error> {
 	let key_server = Arc::new(key_server::KeyServerImpl::new(&config.cluster_config, key_server_set.clone(), self_key_pair.clone(),
 		acl_storage.clone(), key_storage.clone(), executor.clone())?);
 
