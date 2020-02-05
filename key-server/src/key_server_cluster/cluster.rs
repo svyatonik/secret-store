@@ -156,7 +156,7 @@ pub struct ClusterConfiguration {
 	/// Reference to ACL storage
 	pub acl_storage: Arc<dyn AclStorage>,
 	/// Administrator public key.
-	pub admin_public: Option<Public>,
+	pub admin_address: Option<Address>,
 	/// Do not remove sessions from container.
 	pub preserve_sessions: bool,
 }
@@ -204,7 +204,7 @@ pub fn new_network_cluster(
 	net_config: NetConnectionsManagerConfig
 ) -> Result<Arc<ClusterCore<NetConnectionsManager>>, Error> {
 	let mut nodes = config.key_server_set.snapshot().current_set;
-	let is_isolated = nodes.remove(config.self_key_pair.public()).is_none();
+	let is_isolated = nodes.remove(&config.self_key_pair.address()).is_none();
 	let connections_data = Arc::new(RwLock::new(NetConnectionsContainer {
 		is_isolated,
 		nodes,
@@ -213,9 +213,9 @@ pub fn new_network_cluster(
 
 	let connection_trigger: Box<dyn ConnectionTrigger> = match net_config.auto_migrate_enabled {
 		false => Box::new(SimpleConnectionTrigger::with_config(&config)),
-		true if config.admin_public.is_none() => Box::new(ConnectionTriggerWithMigration::with_config(&config)),
+		true if config.admin_address.is_none() => Box::new(ConnectionTriggerWithMigration::with_config(&config)),
 		true => return Err(Error::Internal(
-			"secret store admininstrator public key is specified with auto-migration enabled".into()
+			"secret store admininstrator address key is specified with auto-migration enabled".into()
 		)),
 	};
 
@@ -246,7 +246,7 @@ pub fn new_test_cluster(
 	config: ClusterConfiguration,
 ) -> Result<Arc<ClusterCore<Arc<TestConnections>>>, Error> {
 	let nodes = config.key_server_set.snapshot().current_set;
-	let connections = new_test_connections(messages, *config.self_key_pair.public(), nodes.keys().cloned().collect());
+	let connections = new_test_connections(messages, config.self_key_pair.address(), nodes.keys().cloned().collect());
 
 	let connection_trigger = Box::new(SimpleConnectionTrigger::with_config(&config));
 	let servers_set_change_creator_connector = connection_trigger.servers_set_change_creator_connector();
@@ -302,7 +302,7 @@ impl<C: ConnectionManager> ClusterCore<C> {
 		let connections = self.data.connections.provider();
 		let mut connected_nodes = connections.connected_nodes()?;
 		let disconnected_nodes = connections.disconnected_nodes();
-		connected_nodes.insert(self.data.self_key_pair.public().clone());
+		connected_nodes.insert(self.data.self_key_pair.address());
 
 		let connected_nodes_count = connected_nodes.len();
 		let disconnected_nodes_count = disconnected_nodes.len();
@@ -332,8 +332,8 @@ impl ClusterView {
 
 impl Cluster for ClusterView {
 	fn broadcast(&self, message: Message) -> Result<(), Error> {
-		for node in self.connected_nodes.iter().filter(|n| *n != self.self_key_pair.public()) {
-			trace!(target: "secretstore_net", "{}: sent message {} to {}", self.self_key_pair.public(), message, node);
+		for node in self.connected_nodes.iter().filter(|n| **n != self.self_key_pair.address()) {
+			trace!(target: "secretstore_net", "{}: sent message {} to {}", self.self_key_pair.address(), message, node);
 			let connection = self.connections.connection(node).ok_or(Error::NodeDisconnected)?;
 			connection.send_message(message.clone());
 		}
@@ -341,7 +341,7 @@ impl Cluster for ClusterView {
 	}
 
 	fn send(&self, to: &NodeId, message: Message) -> Result<(), Error> {
-		trace!(target: "secretstore_net", "{}: sent message {} to {}", self.self_key_pair.public(), message, to);
+		trace!(target: "secretstore_net", "{}: sent message {} to {}", self.self_key_pair.address(), message, to);
 		let connection = self.connections.connection(to).ok_or(Error::NodeDisconnected)?;
 		connection.send_message(message);
 		Ok(())
@@ -376,12 +376,12 @@ impl<C: ConnectionManager> ClusterClientImpl<C> {
 		session_id: SessionId,
 	) -> Result<WaitableSession<KeyVersionNegotiationSession<KeyVersionNegotiationSessionTransport>>, Error> {
 		let mut connected_nodes = self.data.connections.provider().connected_nodes()?;
-		connected_nodes.insert(self.data.self_key_pair.public().clone());
+		connected_nodes.insert(self.data.self_key_pair.address());
 
 		let access_key = Random.generate()?.secret().clone();
 		let session_id = SessionIdWithSubSession::new(session_id, access_key);
 		let cluster = create_cluster_view(self.data.self_key_pair.clone(), self.data.connections.provider(), false)?;
-		let session = self.data.sessions.negotiation_sessions.insert(cluster, self.data.self_key_pair.public().clone(), session_id.clone(), None, false, None)?;
+		let session = self.data.sessions.negotiation_sessions.insert(cluster, self.data.self_key_pair.address(), session_id.clone(), None, false, None)?;
 		match session.session.initialize(connected_nodes) {
 			Ok(()) => Ok(session),
 			Err(error) => {
@@ -401,10 +401,10 @@ impl<C: ConnectionManager> ClusterClient for ClusterClientImpl<C> {
 		threshold: usize,
 	) -> Result<WaitableSession<GenerationSession>, Error> {
 		let mut connected_nodes = self.data.connections.provider().connected_nodes()?;
-		connected_nodes.insert(self.data.self_key_pair.public().clone());
+		connected_nodes.insert(self.data.self_key_pair.address());
 
 		let cluster = create_cluster_view(self.data.self_key_pair.clone(), self.data.connections.provider(), true)?;
-		let session = self.data.sessions.generation_sessions.insert(cluster, self.data.self_key_pair.public().clone(), session_id, None, false, None)?;
+		let session = self.data.sessions.generation_sessions.insert(cluster, self.data.self_key_pair.address().clone(), session_id, None, false, None)?;
 		process_initialization_result(
 			session.session.initialize(origin, author, false, threshold, connected_nodes.into()),
 			session, &self.data.sessions.generation_sessions)
@@ -418,10 +418,10 @@ impl<C: ConnectionManager> ClusterClient for ClusterClientImpl<C> {
 		encrypted_point: Public,
 	) -> Result<WaitableSession<EncryptionSession>, Error> {
 		let mut connected_nodes = self.data.connections.provider().connected_nodes()?;
-		connected_nodes.insert(self.data.self_key_pair.public().clone());
+		connected_nodes.insert(self.data.self_key_pair.address().clone());
 
 		let cluster = create_cluster_view(self.data.self_key_pair.clone(), self.data.connections.provider(), true)?;
-		let session = self.data.sessions.encryption_sessions.insert(cluster, self.data.self_key_pair.public().clone(), session_id, None, false, None)?;
+		let session = self.data.sessions.encryption_sessions.insert(cluster, self.data.self_key_pair.address(), session_id, None, false, None)?;
 		process_initialization_result(
 			session.session.initialize(requester, common_point, encrypted_point),
 			session, &self.data.sessions.encryption_sessions)
@@ -437,12 +437,12 @@ impl<C: ConnectionManager> ClusterClient for ClusterClientImpl<C> {
 		is_broadcast_decryption: bool,
 	) -> Result<WaitableSession<DecryptionSession>, Error> {
 		let mut connected_nodes = self.data.connections.provider().connected_nodes()?;
-		connected_nodes.insert(self.data.self_key_pair.public().clone());
+		connected_nodes.insert(self.data.self_key_pair.address().clone());
 
 		let access_key = Random.generate()?.secret().clone();
 		let session_id = SessionIdWithSubSession::new(session_id, access_key);
 		let cluster = create_cluster_view(self.data.self_key_pair.clone(), self.data.connections.provider(), false)?;
-		let session = self.data.sessions.decryption_sessions.insert(cluster, self.data.self_key_pair.public().clone(),
+		let session = self.data.sessions.decryption_sessions.insert(cluster, self.data.self_key_pair.address().clone(),
 			session_id.clone(), None, false, Some(requester))?;
 
 		let initialization_result = match version {
@@ -475,12 +475,12 @@ impl<C: ConnectionManager> ClusterClient for ClusterClientImpl<C> {
 		message_hash: H256,
 	) -> Result<WaitableSession<SchnorrSigningSession>, Error> {
 		let mut connected_nodes = self.data.connections.provider().connected_nodes()?;
-		connected_nodes.insert(self.data.self_key_pair.public().clone());
+		connected_nodes.insert(self.data.self_key_pair.address().clone());
 
 		let access_key = Random.generate()?.secret().clone();
 		let session_id = SessionIdWithSubSession::new(session_id, access_key);
 		let cluster = create_cluster_view(self.data.self_key_pair.clone(), self.data.connections.provider(), false)?;
-		let session = self.data.sessions.schnorr_signing_sessions.insert(cluster, self.data.self_key_pair.public().clone(), session_id.clone(), None, false, Some(requester))?;
+		let session = self.data.sessions.schnorr_signing_sessions.insert(cluster, self.data.self_key_pair.address(), session_id.clone(), None, false, Some(requester))?;
 
 		let initialization_result = match version {
 			Some(version) => session.session.initialize(version, message_hash),
@@ -507,12 +507,12 @@ impl<C: ConnectionManager> ClusterClient for ClusterClientImpl<C> {
 		message_hash: H256,
 	) -> Result<WaitableSession<EcdsaSigningSession>, Error> {
 		let mut connected_nodes = self.data.connections.provider().connected_nodes()?;
-		connected_nodes.insert(self.data.self_key_pair.public().clone());
+		connected_nodes.insert(self.data.self_key_pair.address());
 
 		let access_key = Random.generate()?.secret().clone();
 		let session_id = SessionIdWithSubSession::new(session_id, access_key);
 		let cluster = create_cluster_view(self.data.self_key_pair.clone(), self.data.connections.provider(), false)?;
-		let session = self.data.sessions.ecdsa_signing_sessions.insert(cluster, self.data.self_key_pair.public().clone(), session_id.clone(), None, false, Some(requester))?;
+		let session = self.data.sessions.ecdsa_signing_sessions.insert(cluster, self.data.self_key_pair.address(), session_id.clone(), None, false, Some(requester))?;
 
 		let initialization_result = match version {
 			Some(version) => session.session.initialize(version, message_hash),
@@ -617,7 +617,7 @@ pub fn new_servers_set_change_session(
 	let cluster = create_cluster_view(self_key_pair.clone(), connections, true)?;
 	let creation_data = AdminSessionCreationData::ServersSetChange(params.migration_id, params.new_nodes_set.clone());
 	let session = sessions.admin_sessions
-		.insert(cluster, *self_key_pair.public(), session_id, None, true, Some(creation_data))?;
+		.insert(cluster, self_key_pair.address(), session_id, None, true, Some(creation_data))?;
 	let initialization_result = session.session.as_servers_set_change().expect("servers set change session is created; qed")
 		.initialize(params.new_nodes_set, params.old_set_signature, params.new_set_signature);
 
@@ -939,24 +939,24 @@ pub mod tests {
 			let cluster_params = ClusterConfiguration {
 				self_key_pair: node_key_pair.clone(),
 				key_server_set: Arc::new(InMemoryKeyServerSet::new(false, self.nodes().iter()
-					.chain(::std::iter::once(node_key_pair.public()))
+					.chain(::std::iter::once(&node_key_pair.address()))
 					.map(|n| (*n, format!("127.0.0.1:{}", 13).parse().unwrap()))
 					.collect())),
 				key_storage: key_storage.clone(),
 				acl_storage: acl_storage.clone(),
-				admin_public: None,
+				admin_address: None,
 				preserve_sessions: self.preserve_sessions,
 			};
 			let cluster = new_test_cluster(self.messages.clone(), cluster_params).unwrap();
 
 			for cluster in self.clusters_map.values(){
-				cluster.data.connections.include(node_key_pair.public().clone());
+				cluster.data.connections.include(node_key_pair.address());
 			}
-			self.acl_storages_map.insert(*node_key_pair.public(), acl_storage);
-			self.key_storages_map.insert(*node_key_pair.public(), key_storage);
-			self.clusters_map.insert(*node_key_pair.public(), cluster);
-			self.key_pairs_map.insert(*node_key_pair.public(), node_key_pair.clone());
-			self.clusters_map.keys().position(|k| k == node_key_pair.public()).unwrap()
+			self.acl_storages_map.insert(node_key_pair.address(), acl_storage);
+			self.key_storages_map.insert(node_key_pair.address(), key_storage);
+			self.clusters_map.insert(node_key_pair.address(), cluster);
+			self.key_pairs_map.insert(node_key_pair.address(), node_key_pair.clone());
+			self.clusters_map.keys().position(|k| *k == node_key_pair.address()).unwrap()
 		}
 
 		/// Is empty message queue?
@@ -1015,30 +1015,30 @@ pub mod tests {
 		let cluster_params: Vec<_> = (0..num_nodes).map(|i| ClusterConfiguration {
 			self_key_pair: key_pairs[i].clone(),
 			key_server_set: Arc::new(InMemoryKeyServerSet::new(false, key_pairs.iter().enumerate()
-				.map(|(j, kp)| (*kp.public(), format!("127.0.0.1:{}", ports_begin + j as u16).parse().unwrap()))
+				.map(|(j, kp)| (kp.address(), format!("127.0.0.1:{}", ports_begin + j as u16).parse().unwrap()))
 				.collect())),
 			key_storage: key_storages[i].clone(),
 			acl_storage: acl_storages[i].clone(),
-			admin_public: None,
+			admin_address: None,
 			preserve_sessions,
 		}).collect();
 		let clusters: Vec<_> = cluster_params.into_iter()
 			.map(|params| new_test_cluster(messages.clone(), params).unwrap())
 			.collect();
 
-		let clusters_map = clusters.iter().map(|c| (*c.data.config.self_key_pair.public(), c.clone())).collect();
-		let key_pairs_map = key_pairs.into_iter().map(|kp| (*kp.public(), kp)).collect();
+		let clusters_map = clusters.iter().map(|c| (c.data.config.self_key_pair.address(), c.clone())).collect();
+		let key_pairs_map = key_pairs.into_iter().map(|kp| (kp.address(), kp)).collect();
 		let key_storages_map = clusters.iter().zip(key_storages.into_iter())
-			.map(|(c, ks)| (*c.data.config.self_key_pair.public(), ks)).collect();
+			.map(|(c, ks)| (c.data.config.self_key_pair.address(), ks)).collect();
 		let acl_storages_map = clusters.iter().zip(acl_storages.into_iter())
-			.map(|(c, acls)| (*c.data.config.self_key_pair.public(), acls)).collect();
+			.map(|(c, acls)| (c.data.config.self_key_pair.address(), acls)).collect();
 		MessageLoop { preserve_sessions, messages, key_pairs_map, acl_storages_map, key_storages_map, clusters_map }
 	}
 
 	#[test]
 	fn cluster_wont_start_generation_session_if_not_fully_connected() {
 		let ml = make_clusters(3);
-		ml.cluster(0).data.connections.disconnect(*ml.cluster(0).data.self_key_pair.public());
+		ml.cluster(0).data.connections.disconnect(ml.cluster(0).data.self_key_pair.address());
 		match ml.cluster(0).client().new_generation_session(SessionId::default(), Default::default(), Default::default(), 1) {
 			Err(Error::NodeDisconnected) => (),
 			Err(e) => panic!("unexpected error {:?}", e),

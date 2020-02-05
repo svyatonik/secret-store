@@ -72,7 +72,7 @@ impl KeyServerCore {
 			key_server_set: key_server_set,
 			acl_storage: acl_storage.clone(),
 			key_storage: key_storage.clone(),
-			admin_public: config.admin_public,
+			admin_address: config.admin_address,
 			preserve_sessions: false,
 		};
 		let net_config = NetConnectionsManagerConfig {
@@ -516,7 +516,7 @@ pub mod tests {
 			_origin: Option<parity_secretstore_primitives::key_server::Origin>,
 			_old_set_signature: RequestSignature,
 			_new_set_signature: RequestSignature,
-			_new_servers_set: BTreeSet<NodeId>,
+			_new_servers_set: BTreeSet<parity_secretstore_primitives::KeyServerPublic>,
 		) -> Self::ChangeServersSetFuture {
 			unimplemented!("test-only")
 		}
@@ -634,17 +634,17 @@ pub mod tests {
 					address: "127.0.0.1".into(),
 					port: start_port + (i as u16),
 				},
-				nodes: key_pairs.iter().enumerate().map(|(j, kp)| (kp.public().clone(),
+				nodes: key_pairs.iter().enumerate().map(|(j, kp)| (kp.address(),
 					NodeAddress {
 						address: "127.0.0.1".into(),
 						port: start_port + (j as u16),
 					})).collect(),
 				key_server_set_contract_address: None,
 				allow_connecting_to_higher_nodes: false,
-				admin_public: None,
+				admin_address: None,
 				auto_migrate_enabled: false,
 			}).collect();
-		let key_servers_set: BTreeMap<Public, SocketAddr> = configs[0].nodes.iter()
+		let key_servers_set: BTreeMap<NodeId, SocketAddr> = configs[0].nodes.iter()
 			.map(|(k, a)| (k.clone(), format!("{}:{}", a.address, a.port).parse().unwrap()))
 			.collect();
 		let key_storages = (0..num_nodes).map(|_| Arc::new(InMemoryKeyStorage::default())).collect::<Vec<_>>();

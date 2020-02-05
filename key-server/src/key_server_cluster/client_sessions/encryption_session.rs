@@ -61,7 +61,7 @@ pub struct SessionParams {
 	/// SessionImpl identifier.
 	pub id: SessionId,
 	/// Id of node, on which this session is running.
-	pub self_node_id: Public,
+	pub self_node_id: NodeId,
 	/// Encrypted data (result of running generation_session::SessionImpl).
 	pub encrypted_data: Option<KeyShare>,
 	/// Key storage.

@@ -17,9 +17,12 @@
 use std::collections::BTreeMap;
 
 use crate::blockchain::ContractAddress;
+use parity_crypto::publickey::Address;
 
 /// Node id.
-pub type NodeId = parity_crypto::publickey::Public;
+pub type NodeId = parity_secretstore_primitives::KeyServerId;
+///
+pub type NodePublic = parity_secretstore_primitives::KeyServerPublic;
 /// Server key id. When key is used to encrypt document, it could be document contents hash.
 pub type ServerKeyId = ethereum_types::H256;
 /// Encrypted document key type.
@@ -71,14 +74,14 @@ pub struct ClusterConfiguration {
 	/// This node address.
 	pub listener_address: NodeAddress,
 	/// All cluster nodes addresses.
-	pub nodes: BTreeMap<parity_crypto::publickey::Public, NodeAddress>,
+	pub nodes: BTreeMap<NodeId, NodeAddress>,
 	/// Key Server Set contract address. If None, servers from 'nodes' map are used.
 	pub key_server_set_contract_address: Option<ContractAddress>,
 	/// Allow outbound connections to 'higher' nodes.
 	/// This is useful for tests, but slower a bit for production.
 	pub allow_connecting_to_higher_nodes: bool,
 	/// Administrator public key.
-	pub admin_public: Option<Public>,
+	pub admin_address: Option<Address>,
 	/// Should key servers set change session should be started when servers set changes.
 	/// This will only work when servers set is configured using KeyServerSet contract.
 	pub auto_migrate_enabled: bool,

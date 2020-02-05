@@ -665,7 +665,7 @@ mod tests {
 
 	impl MessageLoop {
 		pub fn prepare_nodes(nodes_num: usize) -> BTreeMap<NodeId, Arc<InMemoryKeyStorage>> {
-			(0..nodes_num).map(|_| (math::generate_random_point().unwrap(),
+			(0..nodes_num).map(|_| (math::generate_random_address().unwrap(),
 				Arc::new(InMemoryKeyStorage::default()))).collect()
 		}
 

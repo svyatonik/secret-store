@@ -73,7 +73,7 @@ struct SessionCore<T: SessionTransport> {
 	/// Key storage.
 	pub key_storage: Arc<dyn KeyStorage>,
 	/// Administrator public key.
-	pub admin_public: Option<Public>,
+	pub admin_address: Option<Address>,
 	/// Session completion signal.
 	pub completed: CompletionSignal<()>,
 }
@@ -135,7 +135,7 @@ pub struct SessionParams<T: SessionTransport> {
 	/// Key storage.
 	pub key_storage: Arc<dyn KeyStorage>,
 	/// Administrator public key.
-	pub admin_public: Option<Public>,
+	pub admin_address: Option<Address>,
 	/// Session nonce.
 	pub nonce: u64,
 }
@@ -171,7 +171,7 @@ impl<T> SessionImpl<T> where T: SessionTransport {
 				key_share: key_share,
 				transport: params.transport,
 				key_storage: params.key_storage,
-				admin_public: params.admin_public,
+				admin_address: params.admin_address,
 				completed,
 			},
 			data: Mutex::new(SessionData {
@@ -273,7 +273,7 @@ impl<T> SessionImpl<T> where T: SessionTransport {
 		let old_set_signature = old_set_signature.ok_or(Error::InvalidMessage)?;
 		let new_set_signature = new_set_signature.ok_or(Error::InvalidMessage)?;
 		let new_nodes_set = new_nodes_set.ok_or(Error::InvalidMessage)?;
-		let admin_public = self.core.admin_public.as_ref().cloned().ok_or(Error::ConsensusUnreachable)?;
+		let admin_public = self.core.admin_address.as_ref().cloned().ok_or(Error::ConsensusUnreachable)?;
 
 		// key share version is required on ShareAdd master node
 		let key_share = self.core.key_share.as_ref().ok_or_else(|| Error::ServerKeyIsNotFound)?;
@@ -364,10 +364,10 @@ impl<T> SessionImpl<T> where T: SessionTransport {
 		match &message.message {
 			&ConsensusMessageOfShareAdd::InitializeConsensusSession(ref message)
 				if data.consensus_session.is_none() && sender == &self.core.meta.master_node_id => {
-					let admin_public = self.core.admin_public.as_ref().cloned().ok_or(Error::ConsensusUnreachable)?;
+					let admin_address = self.core.admin_address.as_ref().cloned().ok_or(Error::ConsensusUnreachable)?;
 					data.consensus_session = Some(ConsensusSession::new(ConsensusSessionParams {
 						meta: self.core.meta.clone().into_consensus_meta(message.new_nodes_map.len())?,
-						consensus_executor: ServersSetChangeAccessJob::new_on_slave(admin_public),
+						consensus_executor: ServersSetChangeAccessJob::new_on_slave(admin_address),
 						consensus_transport: self.core.transport.clone(),
 					})?);
 				},
@@ -890,7 +890,7 @@ impl SessionTransport for IsolatedSessionTransport {
 #[cfg(test)]
 pub mod tests {
 	use std::collections::BTreeSet;
-	use parity_crypto::publickey::{Random, Generator, Public};
+	use parity_crypto::publickey::{Address, Random, Generator, Public};
 	use parity_secretstore_primitives::key_storage::KeyStorage;
 	use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 	use crate::key_server_cluster::{NodeId, Error};
@@ -906,7 +906,7 @@ pub mod tests {
 
 		fn create(
 			mut meta: ShareChangeSessionMeta,
-			admin_public: Public,
+			admin_address: Address,
 			_: BTreeSet<NodeId>,
 			ml: &ClusterMessageLoop,
 			idx: usize
@@ -914,12 +914,12 @@ pub mod tests {
 			let key_storage = ml.key_storage(idx).clone();
 			let key_version = key_storage.get(&meta.id).unwrap().map(|ks| ks.last_version().unwrap().hash);
 
-			meta.self_node_id = *ml.node_key_pair(idx).public();
+			meta.self_node_id = ml.node_key_pair(idx).address();
 			SessionImpl::new(SessionParams {
 				meta: meta.clone(),
 				transport: IsolatedSessionTransport::new(meta.id, key_version, 1, ml.cluster(idx).view().unwrap()),
 				key_storage,
-				admin_public: Some(admin_public),
+				admin_address: Some(admin_address),
 				nonce: 1,
 			}).unwrap().0
 		}
@@ -974,7 +974,7 @@ pub mod tests {
 
 		// try to add 1 node using this node as a master node
 		let add = vec![Random.generate().unwrap()];
-		let master = *add[0].public();
+		let master = add[0].address();
 		assert_eq!(MessageLoop::with_gml::<Adapter>(gml, master, Some(add), None, None)
 			.run_at(master).unwrap_err(), Error::ServerKeyIsNotFound);
 	}
@@ -1057,7 +1057,7 @@ pub mod tests {
 		let mut oldest_nodes_set = gml.0.nodes();
 		oldest_nodes_set.remove(&node_to_isolate);
 		let add = (0..add).map(|_| Random.generate().unwrap()).collect::<Vec<_>>();
-		let newest_nodes_set = add.iter().map(|kp| *kp.public()).collect::<Vec<_>>();
+		let newest_nodes_set = add.iter().map(|kp| kp.address()).collect::<Vec<_>>();
 		let isolate = ::std::iter::once(node_to_isolate).collect();
 		let ml = MessageLoop::with_gml::<Adapter>(gml, master, Some(add), None, Some(isolate))
 			.run_at(master).unwrap();

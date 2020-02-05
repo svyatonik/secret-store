@@ -275,8 +275,8 @@ impl NetConnectionsData {
 		if container.connections.contains_key(&node) {
 			// we have already connected to the same node
 			// the agreement is that node with lower id must establish connection to node with higher id
-			if (*self.self_key_pair.public() < node && connection.is_inbound())
-				|| (*self.self_key_pair.public() > node && !connection.is_inbound()) {
+			if (self.self_key_pair.address() < node && connection.is_inbound())
+				|| (self.self_key_pair.address() > node && !connection.is_inbound()) {
 				return false;
 			}
 		}
@@ -497,7 +497,7 @@ fn net_keep_alive(data: Arc<NetConnectionsData>) {
 fn net_connect_disconnected(data: Arc<NetConnectionsData>) {
 	let disconnected_nodes = data.disconnected_nodes();
 	for (node_id, address) in disconnected_nodes {
-		if data.allow_connecting_to_higher_nodes || *data.self_key_pair.public() < node_id {
+		if data.allow_connecting_to_higher_nodes || data.self_key_pair.address() < node_id {
 			net_connect(data.clone(), address);
 		}
 	}

@@ -144,7 +144,7 @@ impl SessionsMessageProcessor {
 						err,
 						message,
 						sender);
-					session.on_session_error(self.self_key_pair.public(), err);
+					session.on_session_error(&self.self_key_pair.address(), err);
 					sessions.remove(&session_id);
 					return Some(session);
 				},
@@ -185,7 +185,7 @@ impl SessionsMessageProcessor {
 				let master = if is_initialization_message {
 					*sender
 				} else {
-					*self.self_key_pair.public()
+					self.self_key_pair.address()
 				};
 				let cluster = create_cluster_view(
 					self.self_key_pair.clone(),
@@ -280,7 +280,7 @@ impl MessageProcessor for SessionsMessageProcessor {
 						Some(ContinueAction::Decrypt(
 							session, origin, is_shadow_decryption, is_broadcast_decryption
 						)) => {
-							let initialization_error = if self.self_key_pair.public() == &master {
+							let initialization_error = if self.self_key_pair.address() == master {
 								session.initialize(
 									origin, version, is_shadow_decryption, is_broadcast_decryption)
 							} else {
@@ -294,7 +294,7 @@ impl MessageProcessor for SessionsMessageProcessor {
 							}
 						},
 						Some(ContinueAction::SchnorrSign(session, message_hash)) => {
-							let initialization_error = if self.self_key_pair.public() == &master {
+							let initialization_error = if self.self_key_pair.address() == master {
 								session.initialize(version, message_hash)
 							} else {
 								session.delegate(master, version, message_hash)
@@ -306,7 +306,7 @@ impl MessageProcessor for SessionsMessageProcessor {
 							}
 						},
 						Some(ContinueAction::EcdsaSign(session, message_hash)) => {
-							let initialization_error = if self.self_key_pair.public() == &master {
+							let initialization_error = if self.self_key_pair.address() == master {
 								session.initialize(version, message_hash)
 							} else {
 								session.delegate(master, version, message_hash)

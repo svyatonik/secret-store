@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
 
-use parity_crypto::publickey::{Public, Secret, Signature, Random, Generator, ec_math_utils};
+use parity_crypto::publickey::{Address, Public, Secret, Signature, Random, Generator, ec_math_utils, public_to_address};
 use ethereum_types::{H256, U256, BigEndianHash};
 use keccak_hash::keccak;
 use crate::key_server_cluster::Error;
@@ -50,6 +50,11 @@ pub fn generate_random_scalar() -> Result<Secret, Error> {
 /// Generate random point.
 pub fn generate_random_point() -> Result<Public, Error> {
 	Ok(Random.generate()?.public().clone())
+}
+
+/// Generate random address.
+pub fn generate_random_address() -> Result<Address, Error> {
+	generate_random_point().map(|public| public_to_address(&public))
 }
 
 /// Get X coordinate of point.

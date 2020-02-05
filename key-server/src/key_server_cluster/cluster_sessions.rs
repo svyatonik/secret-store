@@ -230,7 +230,7 @@ impl ClusterSessions {
 		let container_state = Arc::new(Mutex::new(ClusterSessionsContainerState::Idle));
 		let creator_core = Arc::new(SessionCreatorCore::new(config));
 		ClusterSessions {
-			self_node_id: config.self_key_pair.public().clone(),
+			self_node_id: config.self_key_pair.address(),
 			generation_sessions: ClusterSessionsContainer::new(GenerationSessionCreator {
 				core: creator_core.clone(),
 				make_faulty_generation_sessions: AtomicBool::new(false),
@@ -253,7 +253,7 @@ impl ClusterSessions {
 			admin_sessions: ClusterSessionsContainer::new(AdminSessionCreator {
 				core: creator_core.clone(),
 				servers_set_change_session_creator_connector: servers_set_change_session_creator_connector,
-				admin_public: config.admin_public.clone(),
+				admin_address: config.admin_address.clone(),
 			}, container_state),
 			creator_core: creator_core,
 		}
@@ -660,7 +660,7 @@ pub fn create_cluster_view(self_key_pair: Arc<dyn KeyServerKeyPair>, connections
 		}
 	}
 
-	connected_nodes.insert(self_key_pair.public().clone());
+	connected_nodes.insert(self_key_pair.address());
 
 	let connected_nodes_count = connected_nodes.len();
 	Ok(Arc::new(ClusterView::new(self_key_pair, connections, connected_nodes, connected_nodes_count + disconnected_nodes_count)))
@@ -675,7 +675,7 @@ mod tests {
 	use parity_secretstore_primitives::key_server_set::InMemoryKeyServerSet;
 	use parity_secretstore_primitives::key_storage::InMemoryKeyStorage;
 	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
-	use crate::key_server_cluster::Error;
+	use crate::key_server_cluster::{Error, math};
 	use crate::key_server_cluster::cluster::ClusterConfiguration;
 	use crate::key_server_cluster::connection_trigger::SimpleServersSetChangeSessionCreatorConnector;
 	use crate::key_server_cluster::cluster::tests::DummyCluster;
@@ -687,14 +687,14 @@ mod tests {
 		let key_pair = Random.generate().unwrap();
 		let config = ClusterConfiguration {
 			self_key_pair: Arc::new(InMemoryKeyServerKeyPair::new(key_pair.clone())),
-			key_server_set: Arc::new(InMemoryKeyServerSet::new(false, vec![(key_pair.public().clone(), format!("127.0.0.1:{}", 100).parse().unwrap())].into_iter().collect())),
+			key_server_set: Arc::new(InMemoryKeyServerSet::new(false, vec![(key_pair.address(), format!("127.0.0.1:{}", 100).parse().unwrap())].into_iter().collect())),
 			key_storage: Arc::new(InMemoryKeyStorage::default()),
 			acl_storage: Arc::new(InMemoryPermissiveAclStorage::default()),
-			admin_public: Some(Random.generate().unwrap().public().clone()),
+			admin_address: Some(math::generate_random_address().unwrap()),
 			preserve_sessions: false,
 		};
 		ClusterSessions::new(&config, Arc::new(SimpleServersSetChangeSessionCreatorConnector {
-			admin_public: Some(Random.generate().unwrap().public().clone()),
+			admin_address: Some(math::generate_random_address().unwrap()),
 		}))
 	}
 

@@ -173,7 +173,7 @@ impl ShareChangeSession {
 			nonce: self.nonce,
 			transport: ShareChangeTransport::new(self.session_id, self.nonce, self.cluster.clone()),
 			key_storage: self.key_storage.clone(),
-			admin_public: None,
+			admin_address: None,
 		})?;
 		share_add_session.set_consensus_output(&self.key_version, consensus_group, version_holders, new_nodes_map)?;
 		self.share_add_session = Some(share_add_session);
@@ -309,7 +309,7 @@ mod tests {
 
 	#[test]
 	fn share_change_plan_creates_empty_plan() {
-		let cluster_nodes: Vec<_> = (0..3).map(|_| math::generate_random_point().unwrap()).collect();
+		let cluster_nodes: Vec<_> = (0..3).map(|_| math::generate_random_address().unwrap()).collect();
 		let master = cluster_nodes[0].clone();
 		let old_key_version_owners = cluster_nodes.iter().cloned().collect();
 		let new_nodes_set = cluster_nodes.iter().cloned().collect();
@@ -321,7 +321,7 @@ mod tests {
 
 	#[test]
 	fn share_change_plan_adds_new_nodes() {
-		let cluster_nodes: Vec<_> = (0..3).map(|_| math::generate_random_point().unwrap()).collect();
+		let cluster_nodes: Vec<_> = (0..3).map(|_| math::generate_random_address().unwrap()).collect();
 		let master = cluster_nodes[0].clone();
 		let old_key_version_owners = cluster_nodes[0..2].iter().cloned().collect();
 		let new_nodes_set = cluster_nodes.iter().cloned().collect();

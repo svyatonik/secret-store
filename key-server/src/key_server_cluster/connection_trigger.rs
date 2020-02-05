@@ -20,7 +20,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use log::trace;
 use ethereum_types::H256;
-use parity_crypto::publickey::Public;
+use parity_crypto::publickey::{Address, Public};
 use parity_secretstore_primitives::key_server_set::{KeyServerSet, KeyServerSetSnapshot};
 use crate::key_server_cluster::cluster::{ClusterConfiguration, ServersSetChangeParams};
 use crate::key_server_cluster::cluster_sessions::AdminSession;
@@ -60,7 +60,7 @@ pub trait ConnectionTrigger: Send + Sync {
 pub trait ServersSetChangeSessionCreatorConnector: Send + Sync {
 	/// Get actual administrator public key. For manual-migration configuration it is the pre-configured
 	/// administrator key. For auto-migration configurations it is the key of actual MigrationSession master node.
-	fn admin_public(&self, migration_id: Option<&H256>, new_server_set: BTreeSet<NodeId>) -> Result<Public, Error>;
+	fn admin_address(&self, migration_id: Option<&H256>, new_server_set: BTreeSet<NodeId>) -> Result<Address, Error>;
 	/// Set active servers set change session.
 	fn set_key_servers_set_change_session(&self, session: Arc<AdminSession>);
 }
@@ -79,7 +79,7 @@ pub struct SimpleConnectionTrigger {
 /// pre-configured administartor public when asked.
 pub struct SimpleServersSetChangeSessionCreatorConnector {
 	/// Secret store administrator public key.
-	pub admin_public: Option<Public>,
+	pub admin_address: Option<Address>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -100,18 +100,18 @@ pub struct TriggerConnections {
 impl SimpleConnectionTrigger {
 	/// Create new simple from cluster configuration.
 	pub fn with_config(config: &ClusterConfiguration) -> Self {
-		Self::new(config.key_server_set.clone(), config.self_key_pair.clone(), config.admin_public)
+		Self::new(config.key_server_set.clone(), config.self_key_pair.clone(), config.admin_address)
 	}
 
 	/// Create new simple connection trigger.
-	pub fn new(key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn KeyServerKeyPair>, admin_public: Option<Public>) -> Self {
+	pub fn new(key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn KeyServerKeyPair>, admin_address: Option<Address>) -> Self {
 		SimpleConnectionTrigger {
 			key_server_set: key_server_set,
 			connections: TriggerConnections {
 				self_key_pair: self_key_pair,
 			},
 			connector: Arc::new(SimpleServersSetChangeSessionCreatorConnector {
-				admin_public: admin_public,
+				admin_address: admin_address,
 			}),
 		}
 	}
@@ -146,8 +146,8 @@ impl ConnectionTrigger for SimpleConnectionTrigger {
 }
 
 impl ServersSetChangeSessionCreatorConnector for SimpleServersSetChangeSessionCreatorConnector {
-	fn admin_public(&self, _migration_id: Option<&H256>, _new_server_set: BTreeSet<NodeId>) -> Result<Public, Error> {
-		self.admin_public.clone().ok_or(Error::AccessDenied)
+	fn admin_address(&self, _migration_id: Option<&H256>, _new_server_set: BTreeSet<NodeId>) -> Result<Address, Error> {
+		self.admin_address.ok_or(Error::AccessDenied)
 	}
 
 	fn set_key_servers_set_change_session(&self, _session: Arc<AdminSession>) {
@@ -158,11 +158,11 @@ impl TriggerConnections {
 	pub fn maintain(&self, action: ConnectionsAction, data: &mut NetConnectionsContainer, server_set: &KeyServerSetSnapshot) {
 		match action {
 			ConnectionsAction::ConnectToCurrentSet => {
-				adjust_connections(self.self_key_pair.public(), data, &server_set.current_set);
+				adjust_connections(&self.self_key_pair.address(), data, &server_set.current_set);
 			},
 			ConnectionsAction::ConnectToMigrationSet => {
 				let migration_set = server_set.migration.as_ref().map(|s| s.set.clone()).unwrap_or_default();
-				adjust_connections(self.self_key_pair.public(), data, &migration_set);
+				adjust_connections(&self.self_key_pair.address(), data, &migration_set);
 			},
 		}
 	}
@@ -220,6 +220,7 @@ mod tests {
 	use parity_secretstore_primitives::key_server_set::{InMemoryKeyServerSet, KeyServerSetSnapshot, KeyServerSetMigration};
 	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
 	use crate::key_server_cluster::cluster_connections_net::NetConnectionsContainer;
+	use crate::key_server_cluster::math;
 	use super::{Maintain, TriggerConnections, ConnectionsAction, ConnectionTrigger, SimpleConnectionTrigger,
 		select_nodes_to_disconnect, adjust_connections};
 
@@ -239,7 +240,7 @@ mod tests {
 
 	#[test]
 	fn do_not_disconnect_if_set_is_not_changed() {
-		let node_id = Random.generate().unwrap().public().clone();
+		let node_id = math::generate_random_address().unwrap();
 		assert_eq!(select_nodes_to_disconnect(
 			&vec![(node_id, "127.0.0.1:8081".parse().unwrap())].into_iter().collect(),
 			&vec![(node_id, "127.0.0.1:8081".parse().unwrap())].into_iter().collect()),
@@ -248,7 +249,7 @@ mod tests {
 
 	#[test]
 	fn disconnect_if_address_has_changed() {
-		let node_id = Random.generate().unwrap().public().clone();
+		let node_id = math::generate_random_address().unwrap();
 		assert_eq!(select_nodes_to_disconnect(
 			&vec![(node_id.clone(), "127.0.0.1:8081".parse().unwrap())].into_iter().collect(),
 			&vec![(node_id.clone(), "127.0.0.1:8082".parse().unwrap())].into_iter().collect()),
@@ -257,7 +258,7 @@ mod tests {
 
 	#[test]
 	fn disconnect_if_node_has_removed() {
-		let node_id = Random.generate().unwrap().public().clone();
+		let node_id = math::generate_random_address().unwrap();
 		assert_eq!(select_nodes_to_disconnect(
 			&vec![(node_id.clone(), "127.0.0.1:8081".parse().unwrap())].into_iter().collect(),
 			&vec![].into_iter().collect()),
@@ -266,19 +267,19 @@ mod tests {
 
 	#[test]
 	fn does_not_disconnect_if_node_has_added() {
-		let node_id = Random.generate().unwrap().public().clone();
+		let node_id = math::generate_random_address().unwrap();
 		assert_eq!(select_nodes_to_disconnect(
 			&vec![(node_id.clone(), "127.0.0.1:8081".parse().unwrap())].into_iter().collect(),
 			&vec![(node_id.clone(), "127.0.0.1:8081".parse().unwrap()),
-				(Random.generate().unwrap().public().clone(), "127.0.0.1:8082".parse().unwrap())]
+				(math::generate_random_address().unwrap(), "127.0.0.1:8082".parse().unwrap())]
 				.into_iter().collect()),
 			vec![]);
 	}
 
 	#[test]
 	fn adjust_connections_disconnects_from_all_nodes_if_not_a_part_of_key_server() {
-		let self_node_id = Random.generate().unwrap().public().clone();
-		let other_node_id = Random.generate().unwrap().public().clone();
+		let self_node_id = math::generate_random_address().unwrap();
+		let other_node_id = math::generate_random_address().unwrap();
 		let mut connection_data = default_connection_data();
 		connection_data.nodes.insert(other_node_id.clone(), "127.0.0.1:8081".parse().unwrap());
 
@@ -290,8 +291,8 @@ mod tests {
 
 	#[test]
 	fn adjust_connections_connects_to_new_nodes() {
-		let self_node_id = Random.generate().unwrap().public().clone();
-		let other_node_id = Random.generate().unwrap().public().clone();
+		let self_node_id = math::generate_random_address().unwrap();
+		let other_node_id = math::generate_random_address().unwrap();
 		let mut connection_data = default_connection_data();
 
 		let required_set = vec![(self_node_id.clone(), "127.0.0.1:8081".parse().unwrap()),
@@ -303,8 +304,8 @@ mod tests {
 
 	#[test]
 	fn adjust_connections_reconnects_from_changed_nodes() {
-		let self_node_id = Random.generate().unwrap().public().clone();
-		let other_node_id = Random.generate().unwrap().public().clone();
+		let self_node_id = math::generate_random_address().unwrap();
+		let other_node_id = math::generate_random_address().unwrap();
 		let mut connection_data = default_connection_data();
 		connection_data.nodes.insert(other_node_id.clone(), "127.0.0.1:8082".parse().unwrap());
 
@@ -317,8 +318,8 @@ mod tests {
 
 	#[test]
 	fn adjust_connections_disconnects_from_removed_nodes() {
-		let self_node_id = Random.generate().unwrap().public().clone();
-		let other_node_id = Random.generate().unwrap().public().clone();
+		let self_node_id = math::generate_random_address().unwrap();
+		let other_node_id = math::generate_random_address().unwrap();
 		let mut connection_data = default_connection_data();
 		connection_data.nodes.insert(other_node_id.clone(), "127.0.0.1:8082".parse().unwrap());
 
@@ -330,7 +331,7 @@ mod tests {
 
 	#[test]
 	fn adjust_connections_does_not_connects_to_self() {
-		let self_node_id = Random.generate().unwrap().public().clone();
+		let self_node_id = math::generate_random_address().unwrap();
 		let mut connection_data = default_connection_data();
 
 		let required_set = vec![(self_node_id.clone(), "127.0.0.1:8081".parse().unwrap())].into_iter().collect();
@@ -342,10 +343,10 @@ mod tests {
 	#[test]
 	fn maintain_connects_to_current_set_works() {
 		let connections = create_connections();
-		let self_node_id = connections.self_key_pair.public().clone();
-		let current_node_id = Random.generate().unwrap().public().clone();
-		let migration_node_id = Random.generate().unwrap().public().clone();
-		let new_node_id = Random.generate().unwrap().public().clone();
+		let self_node_id = connections.self_key_pair.address();
+		let current_node_id = math::generate_random_address().unwrap();
+		let migration_node_id = math::generate_random_address().unwrap();
+		let new_node_id = math::generate_random_address().unwrap();
 
 		let mut connections_data = default_connection_data();
 		connections.maintain(ConnectionsAction::ConnectToCurrentSet, &mut connections_data, &KeyServerSetSnapshot {
@@ -364,10 +365,10 @@ mod tests {
 	#[test]
 	fn maintain_connects_to_migration_set_works() {
 		let connections = create_connections();
-		let self_node_id = connections.self_key_pair.public().clone();
-		let current_node_id = Random.generate().unwrap().public().clone();
-		let migration_node_id = Random.generate().unwrap().public().clone();
-		let new_node_id = Random.generate().unwrap().public().clone();
+		let self_node_id = connections.self_key_pair.address();
+		let current_node_id = math::generate_random_address().unwrap();
+		let migration_node_id = math::generate_random_address().unwrap();
+		let new_node_id = math::generate_random_address().unwrap();
 
 		let mut connections_data = default_connection_data();
 		connections.maintain(ConnectionsAction::ConnectToMigrationSet, &mut connections_data, &KeyServerSetSnapshot {

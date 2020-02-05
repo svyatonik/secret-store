@@ -60,7 +60,7 @@ pub struct SessionParams {
 	/// SessionImpl identifier.
 	pub id: SessionId,
 	/// Id of node, on which this session is running.
-	pub self_node_id: Public,
+	pub self_node_id: NodeId,
 	/// Key storage.
 	pub key_storage: Option<Arc<dyn KeyStorage>>,
 	/// Cluster

@@ -875,15 +875,15 @@ mod tests {
 			"c06546b5669877ba579ca437a5602e89425c53808c708d44ccd6afcaa4610fad".parse().unwrap(),
 		];
 		let id_numbers: Vec<(NodeId, Secret)> = vec![
-			(H512::from_str("b486d3840218837b035c66196ecb15e6b067ca20101e11bd5e626288ab6806ecc70b8307012626bd512bad1559112d11d21025cef48cc7a1d2f3976da08f36c8").unwrap(),
+			(Address::from_str("5e6d2e70e8176b42b3e5d9e31f03138555e69244").unwrap(),
 				"281b6bf43cb86d0dc7b98e1b7def4a80f3ce16d28d2308f934f116767306f06c".parse().unwrap()),
-			(H512::from_str("1395568277679f7f583ab7c0992da35f26cde57149ee70e524e49bdae62db3e18eb96122501e7cbb798b784395d7bb5a499edead0706638ad056d886e56cf8fb").unwrap(),
+			(Address::from_str("99322f4d787b4c3b6888b3fde69fc3854d2723ea").unwrap(),
 				"00125d85a05e5e63e214cb60fe63f132eec8a103aa29266b7e6e6c5b7597230b".parse().unwrap()),
-			(H512::from_str("99e82b163b062d55a64085bacfd407bb55f194ba5fb7a1af9c34b84435455520f1372e0e650a4f91aed0058cb823f62146ccb5599c8d13372c300dea866b69fc").unwrap(),
+			(Address::from_str("a76bf875aa039e6ee036f977c89d9ceb9b28e2f0").unwrap(),
 				"f43ac0fba42a5b6ed95707d2244659e89ba877b1c9b82c0d0a9dcf834e80fc62".parse().unwrap()),
-			(H512::from_str("7e05df9dd077ec21ed4bc45c9fe9e0a43d65fa4be540630de615ced5e95cf5c3003035eb713317237d7667feeeb64335525158f5f7411f67aca9645169ea554c").unwrap(),
+			(Address::from_str("937cdb8fd931ef68b838fce6fdf32bbc48a0c225").unwrap(),
 				"5a324938dfb2516800487d25ab7289ba8ec38811f77c3df602e4e65e3c9acd9f".parse().unwrap()),
-			(H512::from_str("321977760d1d8e15b047a309e4c7fe6f355c10bb5a06c68472b676926427f69f229024fa2692c10da167d14cdc77eb95d0fce68af0a0f704f0d3db36baa83bb2").unwrap(),
+			(Address::from_str("055efcd76c09d36ea5d95e485125b7728c9e46d9").unwrap(),
 				"12cf422d50002d04e52bd4906fd7f5f235f051ca36abfe37e061f8da248008d8".parse().unwrap()),
 		];
 		let common_point: Public = H512::from_str("6962be696e1bcbba8e64cc7fddf140f854835354b5804f3bb95ae5a2799130371b589a131bd39699ac7174ccb35fc4342dab05331202209582fc8f3a40916ab0").unwrap();
@@ -973,7 +973,7 @@ mod tests {
 	#[test]
 	fn constructs_in_cluster_of_single_node() {
 		let mut nodes = BTreeMap::new();
-		let self_node_id = Random.generate().unwrap().public().clone();
+		let self_node_id = math::generate_random_address().unwrap();
 		nodes.insert(self_node_id, Random.generate().unwrap().secret().clone());
 		match SessionImpl::new(SessionParams {
 			meta: SessionMeta {
@@ -1008,7 +1008,7 @@ mod tests {
 
 	#[test]
 	fn fails_to_initialize_if_does_not_have_a_share() {
-		let self_node_id = Random.generate().unwrap().public().clone();
+		let self_node_id = math::generate_random_address().unwrap();
 		let session = SessionImpl::new(SessionParams {
 			meta: SessionMeta {
 				id: SessionId::default(),
@@ -1032,9 +1032,9 @@ mod tests {
 	#[test]
 	fn fails_to_initialize_if_threshold_is_wrong() {
 		let mut nodes = BTreeMap::new();
-		let self_node_id = Random.generate().unwrap().public().clone();
+		let self_node_id = math::generate_random_address().unwrap();
 		nodes.insert(self_node_id.clone(), Random.generate().unwrap().secret().clone());
-		nodes.insert(Random.generate().unwrap().public().clone(), Random.generate().unwrap().secret().clone());
+		nodes.insert(math::generate_random_address().unwrap(), Random.generate().unwrap().secret().clone());
 		let session = SessionImpl::new(SessionParams {
 			meta: SessionMeta {
 				id: SessionId::default(),

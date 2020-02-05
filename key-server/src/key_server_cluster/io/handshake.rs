@@ -38,7 +38,7 @@ use std::collections::BTreeSet;
 use futures::{try_ready, Future, Poll, Async};
 use tokio_io::{AsyncRead, AsyncWrite};
 use parity_crypto::publickey::ecdh::agree;
-use parity_crypto::publickey::{Random, Generator, KeyPair, Public, Signature, verify_public, sign, recover};
+use parity_crypto::publickey::{Random, Generator, KeyPair, Public, Signature, verify_address, sign, recover};
 use ethereum_types::H256;
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::key_server_cluster::{NodeId, Error};
@@ -57,7 +57,7 @@ pub fn handshake<A>(a: A, self_key_pair: Arc<dyn KeyServerKeyPair>, trusted_node
 pub fn handshake_with_init_data<A>(a: A, init_data: Result<(H256, KeyPair), Error>, self_key_pair: Arc<dyn KeyServerKeyPair>, trusted_nodes: BTreeSet<NodeId>) -> Handshake<A> where A: AsyncWrite + AsyncRead {
 	let handshake_input_data = init_data
 		.and_then(|(cp, kp)| sign(kp.secret(), &cp).map(|sp| (cp, kp, sp)).map_err(Into::into))
-		.and_then(|(cp, kp, sp)| Handshake::<A>::make_public_key_message(self_key_pair.public().clone(), cp.clone(), sp).map(|msg| (cp, kp, msg)));
+		.and_then(|(cp, kp, sp)| Handshake::<A>::make_public_key_message(self_key_pair.address(), cp.clone(), sp).map(|msg| (cp, kp, msg)));
 
 	let (error, cp, kp, state) = match handshake_input_data {
 		Ok((cp, kp, msg)) => (None, cp, Some(kp), HandshakeState::SendPublicKey(write_message(a, msg))),
@@ -264,7 +264,7 @@ impl<A> Future for Handshake<A> where A: AsyncRead + AsyncWrite {
 						Err(err) => return Ok((stream, Err(err)).into()),
 					};
 
-					let message = match Handshake::<A>::make_public_key_message(self.self_key_pair.public().clone(), self.self_confirmation_plain.clone(), confirmation_signed_session) {
+					let message = match Handshake::<A>::make_public_key_message(self.self_key_pair.address(), self.self_confirmation_plain.clone(), confirmation_signed_session) {
 						Ok(message) => message,
 						Err(err) => return Ok((stream, Err(err)).into()),
 					};
@@ -291,8 +291,8 @@ impl<A> Future for Handshake<A> where A: AsyncRead + AsyncWrite {
 					Err(err) => return Ok((stream, Err(err.into())).into()),
 				};
 
-				let peer_public = self.peer_node_id.as_ref().expect("peer_node_id is filled in ReceivePublicKey; ReceivePrivateKeySignature follows ReceivePublicKey; qed");
-				if !verify_public(peer_public, &*message.confirmation_signed, &self.self_confirmation_plain).unwrap_or(false) {
+				let peer_address = self.peer_node_id.as_ref().expect("peer_node_id is filled in ReceivePublicKey; ReceivePrivateKeySignature follows ReceivePublicKey; qed");
+				if !verify_address(peer_address, &*message.confirmation_signed, &self.self_confirmation_plain).unwrap_or(false) {
 					return Ok((stream, Err(Error::InvalidMessage)).into());
 				}
 
@@ -334,9 +334,9 @@ mod tests {
 		let self_confirmation_signed = sign(io.peer_key_pair().secret(), &self_confirmation_plain).unwrap();
 		let peer_confirmation_signed = sign(io.peer_session_key_pair().secret(), &peer_confirmation_plain).unwrap();
 
-		let peer_public = io.peer_key_pair().public().clone();
+		let peer_address = io.peer_key_pair().address();
 		io.add_input_message(Message::Cluster(ClusterMessage::NodePublicKey(NodePublicKey {
-			node_id: peer_public.into(),
+			node_id: peer_address.into(),
 			confirmation_plain: peer_confirmation_plain.into(),
 			confirmation_signed_session: peer_confirmation_signed.into(),
 		})));
@@ -350,7 +350,7 @@ mod tests {
 	#[test]
 	fn active_handshake_works() {
 		let (self_confirmation_plain, io) = prepare_test_io();
-		let trusted_nodes: BTreeSet<_> = vec![io.peer_key_pair().public().clone()].into_iter().collect();
+		let trusted_nodes: BTreeSet<_> = vec![io.peer_key_pair().address()].into_iter().collect();
 		let self_session_key_pair = io.self_session_key_pair().clone();
 		let self_key_pair = Arc::new(InMemoryKeyServerKeyPair::new(io.self_key_pair().clone()));
 		let shared_key = io.shared_key_pair().clone();
@@ -358,7 +358,7 @@ mod tests {
 		let handshake = handshake_with_init_data(io, Ok((self_confirmation_plain, self_session_key_pair)), self_key_pair, trusted_nodes);
 		let handshake_result = handshake.wait().unwrap();
 		assert_eq!(handshake_result.1, Ok(HandshakeResult {
-			node_id: handshake_result.0.peer_key_pair().public().clone(),
+			node_id: handshake_result.0.peer_key_pair().address(),
 			shared_key: shared_key,
 		}));
 	}
@@ -376,7 +376,7 @@ mod tests {
 
 		let handshake_result = handshake.wait().unwrap();
 		assert_eq!(handshake_result.1, Ok(HandshakeResult {
-			node_id: handshake_result.0.peer_key_pair().public().clone(),
+			node_id: handshake_result.0.peer_key_pair().address(),
 			shared_key: shared_key,
 		}));
 	}
