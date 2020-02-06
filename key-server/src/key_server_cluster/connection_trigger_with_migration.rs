@@ -23,7 +23,6 @@ use parity_crypto::publickey::{Address, Public};
 use parking_lot::Mutex;
 use parity_secretstore_primitives::key_server_set::{KeyServerSet, KeyServerSetSnapshot, KeyServerSetMigration};
 use crate::key_server_cluster::cluster::{ClusterConfiguration, ServersSetChangeParams};
-use crate::key_server_cluster::cluster_connections_net::NetConnectionsContainer;
 use crate::key_server_cluster::cluster_sessions::{AdminSession, ClusterSession};
 use crate::key_server_cluster::jobs::servers_set_change_access_job::ordered_nodes_hash;
 use crate::key_server_cluster::connection_trigger::{Maintain, ConnectionsAction, ConnectionTrigger,
@@ -32,13 +31,13 @@ use crate::types::{Error, NodeId};
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 
 /// Key servers set change trigger with automated migration procedure.
-pub struct ConnectionTriggerWithMigration {
+pub struct ConnectionTriggerWithMigration<NetworkAddress> {
 	/// This node key pair.
 	self_key_pair: Arc<dyn KeyServerKeyPair>,
 	/// Key server set.
-	key_server_set: Arc<dyn KeyServerSet>,
+	key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>,
 	/// Last server set state.
-	snapshot: KeyServerSetSnapshot,
+	snapshot: KeyServerSetSnapshot<NetworkAddress>,
 	/// Required connections action.
 	connections_action: Option<ConnectionsAction>,
 	/// Required session action.
@@ -48,16 +47,16 @@ pub struct ConnectionTriggerWithMigration {
 	/// Trigger migration connections.
 	connections: TriggerConnections,
 	/// Trigger migration session.
-	session: TriggerSession,
+	session: TriggerSession<NetworkAddress>,
 }
 
 #[derive(Default)]
 /// Key servers set change session creator connector with migration support.
-pub struct ServersSetChangeSessionCreatorConnectorWithMigration {
+pub struct ServersSetChangeSessionCreatorConnectorWithMigration<NetworkAddress> {
 	/// This node id.
 	self_node_id: NodeId,
 	/// Active migration state to check when servers set change session is started.
-	migration: Mutex<Option<KeyServerSetMigration>>,
+	migration: Mutex<Option<KeyServerSetMigration<NetworkAddress>>>,
 	/// Active servers set change session.
 	session: Mutex<Option<Arc<AdminSession>>>,
 }
@@ -102,23 +101,23 @@ pub enum MigrationState {
 }
 
 /// Migration session.
-struct TriggerSession {
+struct TriggerSession<NetworkAddress> {
 	/// Servers set change session creator connector.
-	connector: Arc<ServersSetChangeSessionCreatorConnectorWithMigration>,
+	connector: Arc<ServersSetChangeSessionCreatorConnectorWithMigration<NetworkAddress>>,
 	/// This node key pair.
 	self_key_pair: Arc<dyn KeyServerKeyPair>,
 	/// Key server set.
-	key_server_set: Arc<dyn KeyServerSet>,
+	key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>,
 }
 
-impl ConnectionTriggerWithMigration {
+impl<NetworkAddress: Send + Sync + Clone> ConnectionTriggerWithMigration<NetworkAddress> {
 	/// Create new simple from cluster configuration.
-	pub fn with_config(config: &ClusterConfiguration) -> Self {
+	pub fn with_config(config: &ClusterConfiguration<NetworkAddress>) -> Self {
 		Self::new(config.key_server_set.clone(), config.self_key_pair.clone())
 	}
 
 	/// Create new trigge with migration.
-	pub fn new(key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn KeyServerKeyPair>) -> Self {
+	pub fn new(key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>, self_key_pair: Arc<dyn KeyServerKeyPair>) -> Self {
 		let snapshot = key_server_set.snapshot();
 		let migration = snapshot.migration.clone();
 
@@ -176,7 +175,7 @@ impl ConnectionTriggerWithMigration {
 	}
 }
 
-impl ConnectionTrigger for ConnectionTriggerWithMigration {
+impl<NetworkAddress: Clone + Send + Sync + 'static> ConnectionTrigger for ConnectionTriggerWithMigration<NetworkAddress> {
 	fn on_maintain(&mut self) -> Option<Maintain> {
 		self.snapshot = self.key_server_set.snapshot();
 		*self.session.connector.migration.lock() = self.snapshot.migration.clone();
@@ -198,10 +197,11 @@ impl ConnectionTrigger for ConnectionTriggerWithMigration {
 		self.session_action.and_then(|action| self.session.maintain(action, &self.snapshot))
 	}
 
-	fn maintain_connections(&mut self, connections: &mut NetConnectionsContainer) {
-		if let Some(action) = self.connections_action {
+	fn maintain_connections(&mut self/*, connections: &mut NetConnectionsContainer*/) {
+		/*if let Some(action) = self.connections_action {
 			self.connections.maintain(action, connections, &self.snapshot);
-		}
+		}*/
+		unimplemented!()
 	}
 
 	fn servers_set_change_creator_connector(&self) -> Arc<dyn ServersSetChangeSessionCreatorConnector> {
@@ -209,7 +209,7 @@ impl ConnectionTrigger for ConnectionTriggerWithMigration {
 	}
 }
 
-impl ServersSetChangeSessionCreatorConnector for ServersSetChangeSessionCreatorConnectorWithMigration {
+impl<NetworkAddress: Send + Sync> ServersSetChangeSessionCreatorConnector for ServersSetChangeSessionCreatorConnectorWithMigration<NetworkAddress> {
 	fn admin_address(&self, migration_id: Option<&H256>, new_server_set: BTreeSet<NodeId>) -> Result<Address, Error> {
 		// the idea is that all nodes are agreed upon a block number and a new set of nodes in this block
 		// then master node is selected of all nodes set && this master signs the old set && new set
@@ -238,7 +238,7 @@ impl ServersSetChangeSessionCreatorConnector for ServersSetChangeSessionCreatorC
 	}
 }
 
-impl TriggerSession {
+impl<NetworkAddress: Send + Sync> TriggerSession<NetworkAddress> {
 	/// Process session action.
 	pub fn process(&mut self, action: SessionAction) -> bool {
 		match action {
@@ -263,7 +263,7 @@ impl TriggerSession {
 	pub fn maintain(
 		&mut self,
 		action: SessionAction,
-		server_set: &KeyServerSetSnapshot
+		server_set: &KeyServerSetSnapshot<NetworkAddress>,
 	) -> Option<ServersSetChangeParams> {
 		if action != SessionAction::Start { // all other actions are processed in maintain
 			return None;
@@ -300,7 +300,7 @@ impl TriggerSession {
 	}
 }
 
-fn migration_state(self_node_id: &NodeId, snapshot: &KeyServerSetSnapshot) -> MigrationState {
+fn migration_state<NetworkAddress>(self_node_id: &NodeId, snapshot: &KeyServerSetSnapshot<NetworkAddress>) -> MigrationState {
 	// if this node is not on current && old set => we do not participate in migration
 	if !snapshot.current_set.contains_key(self_node_id) &&
 		!snapshot.migration.as_ref().map(|s| s.set.contains_key(self_node_id)).unwrap_or_default() {
@@ -335,7 +335,7 @@ fn session_state(session: Option<Arc<AdminSession>>) -> SessionState {
 		.unwrap_or(SessionState::Idle)
 }
 
-fn maintain_session(self_node_id: &NodeId, connected: &BTreeSet<NodeId>, snapshot: &KeyServerSetSnapshot, migration_state: MigrationState, session_state: SessionState) -> Option<SessionAction> {
+fn maintain_session<NetworkAddress>(self_node_id: &NodeId, connected: &BTreeSet<NodeId>, snapshot: &KeyServerSetSnapshot<NetworkAddress>, migration_state: MigrationState, session_state: SessionState) -> Option<SessionAction> {
 	let migration_data_proof = "migration_state is Started; migration data available when started; qed";
 
 	match (migration_state, session_state) {
@@ -426,13 +426,13 @@ fn maintain_connections(migration_state: MigrationState, session_state: SessionS
 	}
 }
 
-fn is_connected_to_all_nodes(self_node_id: &NodeId, nodes: &BTreeMap<NodeId, SocketAddr>, connected: &BTreeSet<NodeId>) -> bool {
+fn is_connected_to_all_nodes<NetworkAddress>(self_node_id: &NodeId, nodes: &BTreeMap<NodeId, NetworkAddress>, connected: &BTreeSet<NodeId>) -> bool {
 	nodes.keys()
 		.filter(|n| *n != self_node_id)
 		.all(|n| connected.contains(n))
 }
 
-fn select_master_node(snapshot: &KeyServerSetSnapshot) -> &NodeId {
+fn select_master_node<NetworkAddress>(snapshot: &KeyServerSetSnapshot<NetworkAddress>) -> &NodeId {
 	// we want to minimize a number of UnknownSession messages =>
 	// try to select a node which was in SS && will be in SS
 	match snapshot.migration.as_ref() {
@@ -450,7 +450,7 @@ fn select_master_node(snapshot: &KeyServerSetSnapshot) -> &NodeId {
 
 /// Check if two sets are equal (in terms of migration requirements). We do not need migration if only
 /// addresses are changed - simply adjusting connections is enough in this case.
-fn is_migration_required(current_set: &BTreeMap<NodeId, SocketAddr>, new_set: &BTreeMap<NodeId, SocketAddr>) -> bool {
+fn is_migration_required<NetworkAddress>(current_set: &BTreeMap<NodeId, NetworkAddress>, new_set: &BTreeMap<NodeId, NetworkAddress>) -> bool {
 	let no_nodes_removed = current_set.keys().all(|n| new_set.contains_key(n));
 	let no_nodes_added = new_set.keys().all(|n| current_set.contains_key(n));
 	!no_nodes_removed || !no_nodes_added
@@ -458,15 +458,24 @@ fn is_migration_required(current_set: &BTreeMap<NodeId, SocketAddr>, new_set: &B
 
 #[cfg(test)]
 mod tests {
+	use std::{collections::BTreeMap, net::SocketAddr};
 	use parity_secretstore_primitives::key_server_set::{KeyServerSetSnapshot, KeyServerSetMigration};
 	use crate::key_server_cluster::connection_trigger::ConnectionsAction;
 	use super::{MigrationState, SessionState, SessionAction, migration_state, maintain_session,
 		maintain_connections, select_master_node};
 	use ethereum_types::{Address, H256, H512};
 
+	fn default_snapshot() -> KeyServerSetSnapshot<SocketAddr> {
+		KeyServerSetSnapshot {
+			current_set: BTreeMap::new(),
+			new_set: BTreeMap::new(),
+			migration: None,
+		}
+	}
+
 	#[test]
 	fn migration_state_is_idle_when_required_but_this_node_is_not_on_the_list() {
-		assert_eq!(migration_state(&Address::from_low_u64_be(1), &KeyServerSetSnapshot {
+		assert_eq!(migration_state::<SocketAddr>(&Address::from_low_u64_be(1), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(2), "127.0.0.1:8081".parse().unwrap())].into_iter().collect(),
 			new_set: vec![(Address::from_low_u64_be(3), "127.0.0.1:8081".parse().unwrap())].into_iter().collect(),
 			migration: None,
@@ -475,7 +484,7 @@ mod tests {
 
 	#[test]
 	fn migration_state_is_idle_when_sets_are_equal() {
-		assert_eq!(migration_state(&Address::from_low_u64_be(1), &KeyServerSetSnapshot {
+		assert_eq!(migration_state::<SocketAddr>(&Address::from_low_u64_be(1), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8081".parse().unwrap())].into_iter().collect(),
 			new_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8081".parse().unwrap())].into_iter().collect(),
 			migration: None,
@@ -484,7 +493,7 @@ mod tests {
 
 	#[test]
 	fn migration_state_is_idle_when_only_address_changes() {
-		assert_eq!(migration_state(&Address::from_low_u64_be(1), &KeyServerSetSnapshot {
+		assert_eq!(migration_state::<SocketAddr>(&Address::from_low_u64_be(1), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8080".parse().unwrap())].into_iter().collect(),
 			new_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8081".parse().unwrap())].into_iter().collect(),
 			migration: None,
@@ -493,7 +502,7 @@ mod tests {
 
 	#[test]
 	fn migration_state_is_required_when_node_is_added() {
-		assert_eq!(migration_state(&Address::from_low_u64_be(1), &KeyServerSetSnapshot {
+		assert_eq!(migration_state::<SocketAddr>(&Address::from_low_u64_be(1), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8080".parse().unwrap())].into_iter().collect(),
 			new_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8080".parse().unwrap()),
 				(Address::from_low_u64_be(2), "127.0.0.1:8081".parse().unwrap())].into_iter().collect(),
@@ -503,7 +512,7 @@ mod tests {
 
 	#[test]
 	fn migration_state_is_required_when_node_is_removed() {
-		assert_eq!(migration_state(&Address::from_low_u64_be(1), &KeyServerSetSnapshot {
+		assert_eq!(migration_state::<SocketAddr>(&Address::from_low_u64_be(1), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8080".parse().unwrap()),
 				(Address::from_low_u64_be(2), "127.0.0.1:8081".parse().unwrap())].into_iter().collect(),
 			new_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8080".parse().unwrap())].into_iter().collect(),
@@ -513,7 +522,7 @@ mod tests {
 
 	#[test]
 	fn migration_state_is_started_when_migration_is_some() {
-		assert_eq!(migration_state(&Address::from_low_u64_be(1), &KeyServerSetSnapshot {
+		assert_eq!(migration_state::<SocketAddr>(&Address::from_low_u64_be(1), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8080".parse().unwrap())].into_iter().collect(),
 			new_set: Default::default(),
 			migration: Some(KeyServerSetMigration {
@@ -527,19 +536,21 @@ mod tests {
 
 	#[test]
 	fn existing_master_is_selected_when_migration_has_started() {
-		assert_eq!(select_master_node(&KeyServerSetSnapshot {
+		assert_eq!(select_master_node::<SocketAddr>(&KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8180".parse().unwrap())].into_iter().collect(),
 			new_set: vec![(Address::from_low_u64_be(2), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
 			migration: Some(KeyServerSetMigration {
 				master: Address::from_low_u64_be(3),
-				..Default::default()
+				id: Default::default(),
+				set: BTreeMap::new(),
+				is_confirmed: false,
 			}),
 		}), &Address::from_low_u64_be(3));
 	}
 
 	#[test]
 	fn persistent_master_is_selected_when_migration_has_not_started_yet() {
-		assert_eq!(select_master_node(&KeyServerSetSnapshot {
+		assert_eq!(select_master_node::<SocketAddr>(&KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8180".parse().unwrap()),
 				(Address::from_low_u64_be(2), "127.0.0.1:8180".parse().unwrap())].into_iter().collect(),
 			new_set: vec![(Address::from_low_u64_be(2), "127.0.0.1:8181".parse().unwrap()),
@@ -550,7 +561,7 @@ mod tests {
 
 	#[test]
 	fn new_master_is_selected_in_worst_case() {
-		assert_eq!(select_master_node(&KeyServerSetSnapshot {
+		assert_eq!(select_master_node::<SocketAddr>(&KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8180".parse().unwrap()),
 				(Address::from_low_u64_be(2), "127.0.0.1:8180".parse().unwrap())].into_iter().collect(),
 			new_set: vec![(Address::from_low_u64_be(3), "127.0.0.1:8181".parse().unwrap()),
@@ -585,13 +596,13 @@ mod tests {
 
 	#[test]
 	fn maintain_sessions_does_nothing_if_no_session_and_no_migration() {
-		assert_eq!(maintain_session(&Address::from_low_u64_be(1), &Default::default(), &Default::default(),
+		assert_eq!(maintain_session::<SocketAddr>(&Address::from_low_u64_be(1), &Default::default(), &default_snapshot(),
 			MigrationState::Idle, SessionState::Idle), None);
 	}
 
 	#[test]
 	fn maintain_session_does_nothing_when_migration_required_on_slave_node_and_no_session() {
-		assert_eq!(maintain_session(&Address::from_low_u64_be(2), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
+		assert_eq!(maintain_session::<SocketAddr>(&Address::from_low_u64_be(2), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
 			new_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap()),
 				(Address::from_low_u64_be(2), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
@@ -601,168 +612,184 @@ mod tests {
 
 	#[test]
 	fn maintain_session_does_nothing_when_migration_started_on_slave_node_and_no_session() {
-		assert_eq!(maintain_session(&Address::from_low_u64_be(2), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
+		assert_eq!(maintain_session::<SocketAddr>(&Address::from_low_u64_be(2), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
 			new_set: Default::default(),
 			migration: Some(KeyServerSetMigration {
 				master: Address::from_low_u64_be(1),
 				set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap()),
 					(Address::from_low_u64_be(2), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
-				..Default::default()
+				id: Default::default(),
+				is_confirmed: false,
 			}),
 		}, MigrationState::Started, SessionState::Idle), None);
 	}
 
 	#[test]
 	fn maintain_session_does_nothing_when_migration_started_on_master_node_and_no_session_and_not_connected_to_migration_nodes() {
-		assert_eq!(maintain_session(&Address::from_low_u64_be(1), &Default::default(), &KeyServerSetSnapshot {
+		assert_eq!(maintain_session::<SocketAddr>(&Address::from_low_u64_be(1), &Default::default(), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
 			new_set: Default::default(),
 			migration: Some(KeyServerSetMigration {
 				master: Address::from_low_u64_be(1),
 				set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap()),
 					(Address::from_low_u64_be(2), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
-				..Default::default()
+				id: Default::default(),
+				is_confirmed: false,
 			}),
 		}, MigrationState::Started, SessionState::Idle), None);
 	}
 
 	#[test]
 	fn maintain_session_starts_session_when_migration_started_on_master_node_and_no_session() {
-		assert_eq!(maintain_session(&Address::from_low_u64_be(1), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
+		assert_eq!(maintain_session::<SocketAddr>(&Address::from_low_u64_be(1), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
 			new_set: Default::default(),
 			migration: Some(KeyServerSetMigration {
 				master: Address::from_low_u64_be(1),
 				set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap()),
 					(Address::from_low_u64_be(2), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
-				..Default::default()
+				id: Default::default(),
+				is_confirmed: false,
 			}),
 		}, MigrationState::Started, SessionState::Idle), Some(SessionAction::Start));
 	}
 
 	#[test]
 	fn maintain_session_does_nothing_when_both_migration_and_session_are_started() {
-		assert_eq!(maintain_session(&Address::from_low_u64_be(1), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
+		assert_eq!(maintain_session::<SocketAddr>(&Address::from_low_u64_be(1), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
 			new_set: Default::default(),
 			migration: Some(KeyServerSetMigration {
 				master: Address::from_low_u64_be(1),
 				set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap()),
 					(Address::from_low_u64_be(2), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
-				..Default::default()
+				id: Default::default(),
+				is_confirmed: false,
 			}),
 		}, MigrationState::Started, SessionState::Active(Default::default())), None);
 	}
 
 	#[test]
 	fn maintain_session_confirms_migration_when_active_and_session_has_finished_on_new_node() {
-		assert_eq!(maintain_session(&Address::from_low_u64_be(1), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
+		assert_eq!(maintain_session::<SocketAddr>(&Address::from_low_u64_be(1), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
 			new_set: Default::default(),
 			migration: Some(KeyServerSetMigration {
 				master: Address::from_low_u64_be(1),
 				set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap()),
 					(Address::from_low_u64_be(2), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
-				..Default::default()
+				id: Default::default(),
+				is_confirmed: false,
 			}),
 		}, MigrationState::Started, SessionState::Finished(Default::default())), Some(SessionAction::ConfirmAndDrop(Default::default())));
 	}
 
 	#[test]
 	fn maintain_session_drops_session_when_active_and_session_has_finished_on_removed_node() {
-		assert_eq!(maintain_session(&Address::from_low_u64_be(1), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
+		assert_eq!(maintain_session::<SocketAddr>(&Address::from_low_u64_be(1), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap()),
 				(Address::from_low_u64_be(2), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
 			new_set: Default::default(),
 			migration: Some(KeyServerSetMigration {
 				master: Address::from_low_u64_be(2),
 				set: vec![(Address::from_low_u64_be(2), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
-				..Default::default()
+				id: Default::default(),
+				is_confirmed: false,
 			}),
 		}, MigrationState::Started, SessionState::Finished(Default::default())), Some(SessionAction::Drop));
 	}
 
 	#[test]
 	fn maintain_session_drops_session_when_active_and_session_has_failed() {
-		assert_eq!(maintain_session(&Address::from_low_u64_be(1), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
+		assert_eq!(maintain_session::<SocketAddr>(&Address::from_low_u64_be(1), &vec![Address::from_low_u64_be(2)].into_iter().collect(), &KeyServerSetSnapshot {
 			current_set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
 			new_set: Default::default(),
 			migration: Some(KeyServerSetMigration {
 				master: Address::from_low_u64_be(1),
 				set: vec![(Address::from_low_u64_be(1), "127.0.0.1:8181".parse().unwrap()),
 					(Address::from_low_u64_be(2), "127.0.0.1:8181".parse().unwrap())].into_iter().collect(),
-				..Default::default()
+				id: Default::default(),
+				is_confirmed: false,
 			}),
 		}, MigrationState::Started, SessionState::Failed(Default::default())), Some(SessionAction::Drop));
 	}
 
 	#[test]
 	fn maintain_session_detects_abnormal_when_no_migration_and_active_session() {
-		assert_eq!(maintain_session(&Default::default(), &Default::default(), &Default::default(),
+		assert_eq!(maintain_session::<SocketAddr>(&Default::default(), &Default::default(), &default_snapshot(),
 			MigrationState::Idle, SessionState::Active(Default::default())), Some(SessionAction::DropAndRetry));
 	}
 
 	#[test]
 	fn maintain_session_detects_abnormal_when_no_migration_and_finished_session() {
-		assert_eq!(maintain_session(&Default::default(), &Default::default(), &Default::default(),
+		assert_eq!(maintain_session::<SocketAddr>(&Default::default(), &Default::default(), &default_snapshot(),
 			MigrationState::Idle, SessionState::Finished(Default::default())), Some(SessionAction::DropAndRetry));
 	}
 
 	#[test]
 	fn maintain_session_detects_abnormal_when_no_migration_and_failed_session() {
-		assert_eq!(maintain_session(&Default::default(), &Default::default(), &Default::default(),
+		assert_eq!(maintain_session::<SocketAddr>(&Default::default(), &Default::default(), &default_snapshot(),
 			MigrationState::Idle, SessionState::Failed(Default::default())), Some(SessionAction::DropAndRetry));
 	}
 
 	#[test]
 	fn maintain_session_detects_abnormal_when_required_migration_and_active_session() {
-		assert_eq!(maintain_session(&Default::default(), &Default::default(), &Default::default(),
+		assert_eq!(maintain_session::<SocketAddr>(&Default::default(), &Default::default(), &default_snapshot(),
 			MigrationState::Required, SessionState::Active(Default::default())), Some(SessionAction::DropAndRetry));
 	}
 
 	#[test]
 	fn maintain_session_detects_abnormal_when_required_migration_and_finished_session() {
-		assert_eq!(maintain_session(&Default::default(), &Default::default(), &Default::default(),
+		assert_eq!(maintain_session::<SocketAddr>(&Default::default(), &Default::default(), &default_snapshot(),
 			MigrationState::Required, SessionState::Finished(Default::default())), Some(SessionAction::DropAndRetry));
 	}
 
 	#[test]
 	fn maintain_session_detects_abnormal_when_required_migration_and_failed_session() {
-		assert_eq!(maintain_session(&Default::default(), &Default::default(), &Default::default(),
+		assert_eq!(maintain_session::<SocketAddr>(&Default::default(), &Default::default(), &default_snapshot(),
 			MigrationState::Required, SessionState::Failed(Default::default())), Some(SessionAction::DropAndRetry));
 	}
 
 	#[test]
 	fn maintain_session_detects_abnormal_when_active_migration_and_active_session_with_different_id() {
-		assert_eq!(maintain_session(&Default::default(), &Default::default(), &KeyServerSetSnapshot {
+		assert_eq!(maintain_session::<SocketAddr>(&Default::default(), &Default::default(), &KeyServerSetSnapshot {
 			migration: Some(KeyServerSetMigration {
 				id: H256::zero(),
-				..Default::default()
+				set: BTreeMap::new(),
+				master: Default::default(),
+				is_confirmed: false,
 			}),
-			..Default::default()
+			current_set: BTreeMap::new(),
+			new_set: BTreeMap::new(),
 		}, MigrationState::Started, SessionState::Active(Some(H256::from_low_u64_be(1)))), Some(SessionAction::DropAndRetry));
 	}
 
 	#[test]
 	fn maintain_session_detects_abnormal_when_active_migration_and_finished_session_with_different_id() {
-		assert_eq!(maintain_session(&Default::default(), &Default::default(), &KeyServerSetSnapshot {
+		assert_eq!(maintain_session::<SocketAddr>(&Default::default(), &Default::default(), &KeyServerSetSnapshot {
 			migration: Some(KeyServerSetMigration {
 				id: H256::zero(),
-				..Default::default()
+				set: BTreeMap::new(),
+				master: Default::default(),
+				is_confirmed: false,
 			}),
-			..Default::default()
+			current_set: BTreeMap::new(),
+			new_set: BTreeMap::new(),
 		}, MigrationState::Started, SessionState::Finished(Some(H256::from_low_u64_be(1)))), Some(SessionAction::DropAndRetry));
 	}
 
 	#[test]
 	fn maintain_session_detects_abnormal_when_active_migration_and_failed_session_with_different_id() {
-		assert_eq!(maintain_session(&Default::default(), &Default::default(), &KeyServerSetSnapshot {
+		assert_eq!(maintain_session::<SocketAddr>(&Default::default(), &Default::default(), &KeyServerSetSnapshot {
 			migration: Some(KeyServerSetMigration {
 				id: H256::zero(),
-				..Default::default()
+				set: BTreeMap::new(),
+				master: Default::default(),
+				is_confirmed: false,
 			}),
-			..Default::default()
+			current_set: BTreeMap::new(),
+			new_set: BTreeMap::new(),
 		}, MigrationState::Started, SessionState::Failed(Some(H256::from_low_u64_be(1)))), Some(SessionAction::DropAndRetry));
 	}
 }

@@ -25,7 +25,6 @@ use parity_secretstore_primitives::key_server_set::{KeyServerSet, KeyServerSetSn
 use crate::key_server_cluster::cluster::{ClusterConfiguration, ServersSetChangeParams};
 use crate::key_server_cluster::cluster_sessions::AdminSession;
 use crate::key_server_cluster::cluster_connections::{Connection};
-use crate::key_server_cluster::cluster_connections_net::{NetConnectionsContainer};
 use crate::types::{Error, NodeId};
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 
@@ -51,7 +50,7 @@ pub trait ConnectionTrigger: Send + Sync {
 	/// Maintain active sessions. Returns Some if servers set session creation required.
 	fn maintain_session(&mut self) -> Option<ServersSetChangeParams>;
 	/// Maintain active connections.
-	fn maintain_connections(&mut self, connections: &mut NetConnectionsContainer);
+	fn maintain_connections(&mut self/*, connections: &mut NetConnectionsContainer*/);
 	/// Return connector for the servers set change session creator.
 	fn servers_set_change_creator_connector(&self) -> Arc<dyn ServersSetChangeSessionCreatorConnector>;
 }
@@ -66,9 +65,9 @@ pub trait ServersSetChangeSessionCreatorConnector: Send + Sync {
 }
 
 /// Simple connection trigger, which only keeps connections to current_set.
-pub struct SimpleConnectionTrigger {
+pub struct SimpleConnectionTrigger<NetworkAddress> {
 	/// Key server set cluster.
-	key_server_set: Arc<dyn KeyServerSet>,
+	key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>,
 	/// Trigger connections.
 	connections: TriggerConnections,
 	/// Servers set change session creator connector.
@@ -97,14 +96,14 @@ pub struct TriggerConnections {
 	pub self_key_pair: Arc<dyn KeyServerKeyPair>,
 }
 
-impl SimpleConnectionTrigger {
+impl<NetworkAddress> SimpleConnectionTrigger<NetworkAddress> {
 	/// Create new simple from cluster configuration.
-	pub fn with_config(config: &ClusterConfiguration) -> Self {
+	pub fn with_config(config: &ClusterConfiguration<NetworkAddress>) -> Self {
 		Self::new(config.key_server_set.clone(), config.self_key_pair.clone(), config.admin_address)
 	}
 
 	/// Create new simple connection trigger.
-	pub fn new(key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn KeyServerKeyPair>, admin_address: Option<Address>) -> Self {
+	pub fn new(key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>, self_key_pair: Arc<dyn KeyServerKeyPair>, admin_address: Option<Address>) -> Self {
 		SimpleConnectionTrigger {
 			key_server_set: key_server_set,
 			connections: TriggerConnections {
@@ -117,7 +116,7 @@ impl SimpleConnectionTrigger {
 	}
 }
 
-impl ConnectionTrigger for SimpleConnectionTrigger {
+impl<NetworkAddress: Send + Sync> ConnectionTrigger for SimpleConnectionTrigger<NetworkAddress> {
 	fn on_maintain(&mut self) -> Option<Maintain> {
 		Some(Maintain::Connections)
 	}
@@ -136,8 +135,9 @@ impl ConnectionTrigger for SimpleConnectionTrigger {
 		None
 	}
 
-	fn maintain_connections(&mut self, connections: &mut NetConnectionsContainer) {
-		self.connections.maintain(ConnectionsAction::ConnectToCurrentSet, connections, &self.key_server_set.snapshot())
+	fn maintain_connections(&mut self/*, connections: &mut NetConnectionsContainer*/) {
+		unimplemented!()
+		/*self.connections.maintain(ConnectionsAction::ConnectToCurrentSet, connections, &self.key_server_set.snapshot())*/
 	}
 
 	fn servers_set_change_creator_connector(&self) -> Arc<dyn ServersSetChangeSessionCreatorConnector> {
@@ -155,8 +155,8 @@ impl ServersSetChangeSessionCreatorConnector for SimpleServersSetChangeSessionCr
 }
 
 impl TriggerConnections {
-	pub fn maintain(&self, action: ConnectionsAction, data: &mut NetConnectionsContainer, server_set: &KeyServerSetSnapshot) {
-		match action {
+	pub fn maintain(&self, action: ConnectionsAction/*, data: &mut NetConnectionsContainer*/, server_set: &KeyServerSetSnapshot<SocketAddr>) {
+		/*match action {
 			ConnectionsAction::ConnectToCurrentSet => {
 				adjust_connections(&self.self_key_pair.address(), data, &server_set.current_set);
 			},
@@ -164,16 +164,17 @@ impl TriggerConnections {
 				let migration_set = server_set.migration.as_ref().map(|s| s.set.clone()).unwrap_or_default();
 				adjust_connections(&self.self_key_pair.address(), data, &migration_set);
 			},
-		}
+		}*/
+		unimplemented!("TODO")
 	}
 }
 
 fn adjust_connections(
 	self_node_id: &NodeId,
-	data: &mut NetConnectionsContainer,
+	/*data: &mut NetConnectionsContainer,*/
 	required_set: &BTreeMap<NodeId, SocketAddr>
 ) {
-	if !required_set.contains_key(self_node_id) {
+	/*if !required_set.contains_key(self_node_id) {
 		if !data.is_isolated {
 			trace!(target: "secretstore_net", "{}: isolated from cluser", self_node_id);
 		}
@@ -199,7 +200,8 @@ fn adjust_connections(
 		if node_to_connect != self_node_id {
 			data.nodes.insert(node_to_connect.clone(), node_addr.clone());
 		}
-	}
+	}*/
+	unimplemented!()
 }
 
 fn select_nodes_to_disconnect(current_set: &BTreeMap<NodeId, SocketAddr>, new_set: &BTreeMap<NodeId, SocketAddr>) -> Vec<NodeId> {
@@ -219,25 +221,24 @@ mod tests {
 	use parity_crypto::publickey::{Random, Generator};
 	use parity_secretstore_primitives::key_server_set::{InMemoryKeyServerSet, KeyServerSetSnapshot, KeyServerSetMigration};
 	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
-	use crate::key_server_cluster::cluster_connections_net::NetConnectionsContainer;
 	use crate::key_server_cluster::math;
 	use super::{Maintain, TriggerConnections, ConnectionsAction, ConnectionTrigger, SimpleConnectionTrigger,
 		select_nodes_to_disconnect, adjust_connections};
 
-	fn default_connection_data() -> NetConnectionsContainer {
+/*	fn default_connection_data() -> NetConnectionsContainer {
 		NetConnectionsContainer {
 			is_isolated: false,
 			nodes: Default::default(),
 			connections: Default::default(),
 		}
-	}
+	}*/
 
 	fn create_connections() -> TriggerConnections {
 		TriggerConnections {
 			self_key_pair: Arc::new(InMemoryKeyServerKeyPair::new(Random.generate().unwrap())),
 		}
 	}
-
+/*
 	#[test]
 	fn do_not_disconnect_if_set_is_not_changed() {
 		let node_id = math::generate_random_address().unwrap();
@@ -384,7 +385,7 @@ mod tests {
 		assert_eq!(vec![migration_node_id].into_iter().collect::<BTreeSet<_>>(),
 			connections_data.nodes.keys().cloned().collect::<BTreeSet<_>>());
 	}
-
+*/
 	#[test]
 	fn simple_connections_trigger_only_maintains_connections() {
 		let key_server_set = Arc::new(InMemoryKeyServerSet::new(false, Default::default()));

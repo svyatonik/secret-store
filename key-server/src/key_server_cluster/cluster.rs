@@ -25,14 +25,13 @@ use parity_secretstore_primitives::acl_storage::AclStorage;
 use parity_secretstore_primitives::key_server_set::KeyServerSet;
 use parity_secretstore_primitives::key_storage::KeyStorage;
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
+use crate::key_server_cluster::io::serialize_message;
 use crate::key_server_cluster::{Error, NodeId, SessionId, Requester};
 use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, AdminSession, ClusterSessions,
 	SessionIdWithSubSession, ClusterSessionsContainer, SERVERS_SET_CHANGE_SESSION_ID, create_cluster_view,
 	AdminSessionCreationData, ClusterSessionsListener};
 use crate::key_server_cluster::cluster_sessions_creator::ClusterSessionCreator;
 use crate::key_server_cluster::cluster_connections::{ConnectionProvider, ConnectionManager};
-use crate::key_server_cluster::cluster_connections_net::{NetConnectionsManager,
-	NetConnectionsContainer, NetConnectionsManagerConfig};
 use crate::key_server_cluster::cluster_message_processor::{MessageProcessor, SessionsMessageProcessor};
 use crate::key_server_cluster::message::Message;
 use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSession};
@@ -47,7 +46,7 @@ use crate::key_server_cluster::connection_trigger::{ConnectionTrigger,
 use crate::key_server_cluster::connection_trigger_with_migration::ConnectionTriggerWithMigration;
 
 #[cfg(test)]
-use crate::key_server_cluster::cluster_connections::tests::{MessagesQueue, TestConnections, new_test_connections};
+use crate::key_server_cluster::cluster_connections::tests::{MessagesQueue, TestConnections, TestConnectionsManager, new_test_connections};
 
 /// Cluster interface for external clients.
 pub trait ClusterClient: Send + Sync {
@@ -146,11 +145,13 @@ pub trait Cluster: Send + Sync {
 
 /// Cluster initialization parameters.
 #[derive(Clone)]
-pub struct ClusterConfiguration {
+pub struct ClusterConfiguration<NetworkAddress> {
+	///
+	pub auto_migrate_enabled: bool,
 	/// KeyPair this node holds.
 	pub self_key_pair: Arc<dyn KeyServerKeyPair>,
 	/// Cluster nodes set.
-	pub key_server_set: Arc<dyn KeyServerSet>,
+	pub key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>,
 	/// Reference to key storage
 	pub key_storage: Arc<dyn KeyStorage>,
 	/// Reference to ACL storage
@@ -162,13 +163,13 @@ pub struct ClusterConfiguration {
 }
 
 /// Network cluster implementation.
-pub struct ClusterCore<C: ConnectionManager> {
+pub struct ClusterCore<C: ConnectionManager + ?Sized> {
 	/// Cluster data.
 	data: Arc<ClusterData<C>>,
 }
 
 /// Network cluster client interface implementation.
-pub struct ClusterClientImpl<C: ConnectionManager> {
+pub struct ClusterClientImpl<C: ConnectionManager + ?Sized> {
 	/// Cluster data.
 	data: Arc<ClusterData<C>>,
 }
@@ -182,13 +183,19 @@ pub struct ClusterView {
 }
 
 /// Cross-thread shareable cluster data.
-pub struct ClusterData<C: ConnectionManager> {
-	/// Cluster configuration.
-	pub config: ClusterConfiguration,
+pub struct ClusterData<C: ConnectionManager + ?Sized> {
 	/// KeyPair this node holds.
 	pub self_key_pair: Arc<dyn KeyServerKeyPair>,
+	/// Reference to key storage
+	pub key_storage: Arc<dyn KeyStorage>,
+	/// Reference to ACL storage
+	pub acl_storage: Arc<dyn AclStorage>,
+	/// Administrator public key.
+	pub admin_address: Option<Address>,
+	/// Do not remove sessions from container.
+	pub preserve_sessions: bool,
 	/// Connections data.
-	pub connections: C,
+	pub connections: Arc<C>,
 	/// Active sessions data.
 	pub sessions: Arc<ClusterSessions>,
 	// Messages processor.
@@ -197,7 +204,33 @@ pub struct ClusterData<C: ConnectionManager> {
 	pub servers_set_change_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>,
 }
 
-/// Create new network-backed cluster.
+pub fn new_cluster_client<C: ConnectionManager + ?Sized, NetworkAddress: Send + Sync + Clone + 'static>(
+	config: ClusterConfiguration<NetworkAddress>,
+	connection_manager: Arc<C>,
+	connection_provider: Arc<dyn ConnectionProvider>,
+) -> Result<Arc<ClusterCore<C>>, Error> {
+	let connection_trigger: Box<dyn ConnectionTrigger> = match config.auto_migrate_enabled {
+		false => Box::new(SimpleConnectionTrigger::with_config(&config)),
+		true if config.admin_address.is_none() => Box::new(ConnectionTriggerWithMigration::with_config(&config)),
+		true => return Err(Error::Internal(
+			"secret store admininstrator address key is specified with auto-migration enabled".into()
+		)),
+	};
+
+	let servers_set_change_creator_connector = connection_trigger.servers_set_change_creator_connector();
+	let sessions = Arc::new(ClusterSessions::new(&config, servers_set_change_creator_connector.clone()));
+
+	let message_processor = Arc::new(SessionsMessageProcessor::new(
+		config.self_key_pair.clone(),
+		servers_set_change_creator_connector.clone(),
+		sessions.clone(),
+		connection_provider,
+	));
+
+	ClusterCore::new(sessions, message_processor, connection_manager, servers_set_change_creator_connector, config)
+}
+
+/*/// Create new network-backed cluster.
 pub fn new_network_cluster(
 	executor: Executor,
 	config: ClusterConfiguration,
@@ -237,16 +270,17 @@ pub fn new_network_cluster(
 	connections.start()?;
 
 	ClusterCore::new(sessions, message_processor, connections, servers_set_change_creator_connector, config)
-}
+}*/
 
 /// Create new in-memory backed cluster
 #[cfg(test)]
 pub fn new_test_cluster(
 	messages: MessagesQueue,
-	config: ClusterConfiguration,
-) -> Result<Arc<ClusterCore<Arc<TestConnections>>>, Error> {
+	config: ClusterConfiguration<std::net::SocketAddr>,
+) -> Result<Arc<ClusterCore<TestConnectionsManager>>, Error> {
 	let nodes = config.key_server_set.snapshot().current_set;
-	let connections = new_test_connections(messages, config.self_key_pair.address(), nodes.keys().cloned().collect());
+	let connections = Arc::new(new_test_connections(messages, config.self_key_pair.address(), nodes.keys().cloned().collect()));
+	let connections_manager = connections.manager();
 
 	let connection_trigger = Box::new(SimpleConnectionTrigger::with_config(&config));
 	let servers_set_change_creator_connector = connection_trigger.servers_set_change_creator_connector();
@@ -260,26 +294,29 @@ pub fn new_test_cluster(
 		config.self_key_pair.clone(),
 		servers_set_change_creator_connector.clone(),
 		sessions.clone(),
-		connections.provider(),
+		connections_manager.provider(),
 	));
 
-	ClusterCore::new(sessions, message_processor, connections, servers_set_change_creator_connector, config)
+	ClusterCore::new(sessions, message_processor, connections_manager, servers_set_change_creator_connector, config)
 }
 
-impl<C: ConnectionManager> ClusterCore<C> {
-	pub fn new(
+impl<C: ConnectionManager + ?Sized> ClusterCore<C> {
+	pub fn new<NetworkAddress>(
 		sessions: Arc<ClusterSessions>,
 		message_processor: Arc<dyn MessageProcessor>,
-		connections: C,
+		connections: Arc<C>,
 		servers_set_change_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>,
-		config: ClusterConfiguration,
+		config: ClusterConfiguration<NetworkAddress>,
 	) -> Result<Arc<Self>, Error> {
 		Ok(Arc::new(ClusterCore {
 			data: Arc::new(ClusterData {
 				self_key_pair: config.self_key_pair.clone(),
 				connections,
 				sessions: sessions.clone(),
-				config,
+				key_storage: config.key_storage,
+				acl_storage: config.acl_storage,
+				admin_address: config.admin_address,
+				preserve_sessions: config.preserve_sessions,
 				message_processor,
 				servers_set_change_creator_connector
 			}),
@@ -332,8 +369,10 @@ impl ClusterView {
 
 impl Cluster for ClusterView {
 	fn broadcast(&self, message: Message) -> Result<(), Error> {
+		let smessage = format!("{}", message);
+		let message: Vec<u8> = serialize_message(message)?.into();
 		for node in self.connected_nodes.iter().filter(|n| **n != self.self_key_pair.address()) {
-			trace!(target: "secretstore_net", "{}: sent message {} to {}", self.self_key_pair.address(), message, node);
+			trace!(target: "secretstore_net", "{}: sent message {} to {}", self.self_key_pair.address(), smessage, node);
 			let connection = self.connections.connection(node).ok_or(Error::NodeDisconnected)?;
 			connection.send_message(message.clone());
 		}
@@ -343,7 +382,7 @@ impl Cluster for ClusterView {
 	fn send(&self, to: &NodeId, message: Message) -> Result<(), Error> {
 		trace!(target: "secretstore_net", "{}: sent message {} to {}", self.self_key_pair.address(), message, to);
 		let connection = self.connections.connection(to).ok_or(Error::NodeDisconnected)?;
-		connection.send_message(message);
+		connection.send_message(serialize_message(message)?.into());
 		Ok(())
 	}
 
@@ -364,7 +403,7 @@ impl Cluster for ClusterView {
 	}
 }
 
-impl<C: ConnectionManager> ClusterClientImpl<C> {
+impl<C: ConnectionManager + ?Sized> ClusterClientImpl<C> {
 	pub fn new(data: Arc<ClusterData<C>>) -> Self {
 		ClusterClientImpl {
 			data: data,
@@ -392,7 +431,7 @@ impl<C: ConnectionManager> ClusterClientImpl<C> {
 	}
 }
 
-impl<C: ConnectionManager> ClusterClient for ClusterClientImpl<C> {
+impl<C: ConnectionManager + ?Sized> ClusterClient for ClusterClientImpl<C> {
 	fn new_generation_session(
 		&self,
 		session_id: SessionId,
@@ -670,7 +709,7 @@ pub mod tests {
 	use crate::key_server_cluster::message::Message;
 	use crate::key_server_cluster::cluster::{new_test_cluster, Cluster, ClusterCore, ClusterConfiguration, ClusterClient};
 	use crate::key_server_cluster::cluster_connections::ConnectionManager;
-	use crate::key_server_cluster::cluster_connections::tests::{MessagesQueue, TestConnections};
+	use crate::key_server_cluster::cluster_connections::tests::{MessagesQueue, TestConnections, TestConnectionsManager};
 	use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, ClusterSessions, AdminSession,
 		ClusterSessionsListener};
 	use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSession,
@@ -846,7 +885,7 @@ pub mod tests {
 		key_pairs_map: BTreeMap<NodeId, Arc<InMemoryKeyServerKeyPair>>,
 		acl_storages_map: BTreeMap<NodeId, Arc<InMemoryPermissiveAclStorage>>,
 		key_storages_map: BTreeMap<NodeId, Arc<InMemoryKeyStorage>>,
-		clusters_map: BTreeMap<NodeId, Arc<ClusterCore<Arc<TestConnections>>>>,
+		clusters_map: BTreeMap<NodeId, Arc<ClusterCore<TestConnectionsManager>>>,
 	}
 
 	impl ::std::fmt::Debug for MessageLoop {
@@ -872,7 +911,7 @@ pub mod tests {
 		}
 
 		/// Get cluster reference by its index.
-		pub fn cluster(&self, idx: usize) -> &Arc<ClusterCore<Arc<TestConnections>>> {
+		pub fn cluster(&self, idx: usize) -> &Arc<ClusterCore<TestConnectionsManager>> {
 			self.clusters_map.values().nth(idx).unwrap()
 		}
 
@@ -946,6 +985,7 @@ pub mod tests {
 				acl_storage: acl_storage.clone(),
 				admin_address: None,
 				preserve_sessions: self.preserve_sessions,
+				auto_migrate_enabled: false,
 			};
 			let cluster = new_test_cluster(self.messages.clone(), cluster_params).unwrap();
 
@@ -1021,17 +1061,18 @@ pub mod tests {
 			acl_storage: acl_storages[i].clone(),
 			admin_address: None,
 			preserve_sessions,
+			auto_migrate_enabled: false,
 		}).collect();
 		let clusters: Vec<_> = cluster_params.into_iter()
 			.map(|params| new_test_cluster(messages.clone(), params).unwrap())
 			.collect();
 
-		let clusters_map = clusters.iter().map(|c| (c.data.config.self_key_pair.address(), c.clone())).collect();
+		let clusters_map = clusters.iter().map(|c| (c.data.self_key_pair.address(), c.clone())).collect();
 		let key_pairs_map = key_pairs.into_iter().map(|kp| (kp.address(), kp)).collect();
 		let key_storages_map = clusters.iter().zip(key_storages.into_iter())
-			.map(|(c, ks)| (c.data.config.self_key_pair.address(), ks)).collect();
+			.map(|(c, ks)| (c.data.self_key_pair.address(), ks)).collect();
 		let acl_storages_map = clusters.iter().zip(acl_storages.into_iter())
-			.map(|(c, acls)| (c.data.config.self_key_pair.address(), acls)).collect();
+			.map(|(c, acls)| (c.data.self_key_pair.address(), acls)).collect();
 		MessageLoop { preserve_sessions, messages, key_pairs_map, acl_storages_map, key_storages_map, clusters_map }
 	}
 
@@ -1184,7 +1225,7 @@ pub mod tests {
 
 		// now remove share from node2
 		assert!((0..3).all(|i| ml.cluster(i).data.sessions.generation_sessions.is_empty()));
-		ml.cluster(2).data.config.key_storage.remove(&Default::default()).unwrap();
+		ml.cluster(2).data.key_storage.remove(&Default::default()).unwrap();
 
 		// and try to sign message with generated key
 		let signature = sign(Random.generate().unwrap().secret(), &Default::default()).unwrap();
@@ -1207,7 +1248,7 @@ pub mod tests {
 		session2.into_wait_future().wait().unwrap();
 
 		// now remove share from node1
-		ml.cluster(1).data.config.key_storage.remove(&Default::default()).unwrap();
+		ml.cluster(1).data.key_storage.remove(&Default::default()).unwrap();
 
 		// and try to sign message with generated key
 		let signature = sign(Random.generate().unwrap().secret(), &Default::default()).unwrap();
@@ -1234,7 +1275,7 @@ pub mod tests {
 
 		// now remove share from node2
 		assert!((0..3).all(|i| ml.cluster(i).data.sessions.generation_sessions.is_empty()));
-		ml.cluster(2).data.config.key_storage.remove(&Default::default()).unwrap();
+		ml.cluster(2).data.key_storage.remove(&Default::default()).unwrap();
 
 		// and try to sign message with generated key
 		let signature = sign(Random.generate().unwrap().secret(), &Default::default()).unwrap();
@@ -1256,7 +1297,7 @@ pub mod tests {
 		session2.into_wait_future().wait().unwrap();
 
 		// now remove share from node1
-		ml.cluster(1).data.config.key_storage.remove(&Default::default()).unwrap();
+		ml.cluster(1).data.key_storage.remove(&Default::default()).unwrap();
 
 		// and try to sign message with generated key
 		let signature = sign(Random.generate().unwrap().secret(), &Default::default()).unwrap();

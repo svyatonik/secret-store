@@ -27,7 +27,7 @@ use std::sync::Arc;
 use parity_runtime::Executor;
 
 pub use crate::types::{ServerKeyId, EncryptedDocumentKey, RequestSignature, Public,
-	Error, NodeAddress, ServiceConfiguration, ClusterConfiguration};
+	Error, NodeAddress, ClusterConfiguration};
 pub use crate::traits::KeyServer;
 pub use crate::blockchain::{SecretStoreChain, ContractAddress, BlockId, BlockNumber, NewBlocksNotify, Filter};
 use parity_secretstore_primitives::{
@@ -37,16 +37,32 @@ use parity_secretstore_primitives::{
 };
 
 /// Start new key server instance
-pub fn start(
+pub fn start<NetworkAddress: Clone + Send + Sync + 'static>(
 	self_key_pair: Arc<dyn parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair>,
-	config: ServiceConfiguration,
+	config: ClusterConfiguration,
 	executor: Executor,
 	acl_storage: Arc<dyn AclStorage>,
-	key_server_set: Arc<dyn KeyServerSet>,
+	key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>,
 	key_storage: Arc<dyn KeyStorage>,
+	connection_manager: Arc<dyn parity_secretstore_primitives::connections::ConnectionManager>,
+	connection_provider: Arc<dyn parity_secretstore_primitives::connections::ConnectionProvider>,
 ) -> Result<Arc<key_server::KeyServerImpl>, Error> {
-	let key_server = Arc::new(key_server::KeyServerImpl::new(&config.cluster_config, key_server_set.clone(), self_key_pair.clone(),
-		acl_storage.clone(), key_storage.clone(), executor.clone())?);
+	let cluster = crate::key_server_cluster::new_cluster_client(
+		crate::key_server_cluster::ClusterConfiguration {
+			self_key_pair,
+			key_server_set,
+			key_storage: key_storage.clone(),
+			acl_storage: acl_storage.clone(),
+			admin_address: config.admin_address,
+			auto_migrate_enabled: config.auto_migrate_enabled,
+			preserve_sessions: false,
+		},
+		connection_manager,
+		connection_provider,
+	)?;
+	cluster.run()?;
+
+	let key_server = Arc::new(key_server::KeyServerImpl::new(cluster.client(), acl_storage, key_storage)?);
 
 	Ok(key_server)
 }

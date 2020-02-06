@@ -226,7 +226,7 @@ pub enum ClusterSessionsContainerState {
 
 impl ClusterSessions {
 	/// Create new cluster sessions container.
-	pub fn new(config: &ClusterConfiguration, servers_set_change_session_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>) -> Self {
+	pub fn new<NetworkAddress>(config: &ClusterConfiguration<NetworkAddress>, servers_set_change_session_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>) -> Self {
 		let container_state = Arc::new(Mutex::new(ClusterSessionsContainerState::Idle));
 		let creator_core = Arc::new(SessionCreatorCore::new(config));
 		ClusterSessions {
@@ -691,6 +691,7 @@ mod tests {
 			key_storage: Arc::new(InMemoryKeyStorage::default()),
 			acl_storage: Arc::new(InMemoryPermissiveAclStorage::default()),
 			admin_address: Some(math::generate_random_address().unwrap()),
+			auto_migrate_enabled: false,
 			preserve_sessions: false,
 		};
 		ClusterSessions::new(&config, Arc::new(SimpleServersSetChangeSessionCreatorConnector {

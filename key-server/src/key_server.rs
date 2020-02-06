@@ -29,11 +29,11 @@ use parity_secretstore_primitives::acl_storage::AclStorage;
 use parity_secretstore_primitives::key_server_set::KeyServerSet;
 use parity_secretstore_primitives::key_storage::KeyStorage;
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
-use crate::key_server_cluster::{math, new_network_cluster, ClusterSession, WaitableSession};
+use crate::key_server_cluster::{math, ClusterSession, WaitableSession};
 use crate::traits::{AdminSessionsServer, ServerKeyGenerator, DocumentKeyServer, MessageSigner, KeyServer};
 use crate::types::{Error, Public, RequestSignature, Requester, ServerKeyId, EncryptedDocumentKey, EncryptedDocumentKeyShadow,
 	ClusterConfiguration, MessageHash, EncryptedMessageSignature, NodeId};
-use crate::key_server_cluster::{ClusterClient, ClusterConfiguration as NetClusterConfiguration, NetConnectionsManagerConfig};
+use crate::key_server_cluster::{ClusterClient, ClusterConfiguration as NetClusterConfiguration};
 
 /// Secret store key server implementation
 pub struct KeyServerImpl {
@@ -49,11 +49,13 @@ pub struct KeyServerCore {
 
 impl KeyServerImpl {
 	/// Create new key server instance
-	pub fn new(config: &ClusterConfiguration, key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn KeyServerKeyPair>,
-		acl_storage: Arc<dyn AclStorage>, key_storage: Arc<dyn KeyStorage>, executor: Executor) -> Result<Self, Error>
-	{
+	pub fn new(
+		cluster: Arc<dyn ClusterClient>,
+		acl_storage: Arc<dyn AclStorage>,
+		key_storage: Arc<dyn KeyStorage>,
+	) -> Result<Self, Error> {
 		Ok(KeyServerImpl {
-			data: Arc::new(Mutex::new(KeyServerCore::new(config, key_server_set, self_key_pair, acl_storage, key_storage, executor)?)),
+			data: Arc::new(Mutex::new(KeyServerCore::new(cluster, acl_storage, key_storage)?)),
 		})
 	}
 
@@ -64,27 +66,11 @@ impl KeyServerImpl {
 }
 
 impl KeyServerCore {
-	pub fn new(config: &ClusterConfiguration, key_server_set: Arc<dyn KeyServerSet>, self_key_pair: Arc<dyn KeyServerKeyPair>,
-		acl_storage: Arc<dyn AclStorage>, key_storage: Arc<dyn KeyStorage>, executor: Executor) -> Result<Self, Error>
-	{
-		let cconfig = NetClusterConfiguration {
-			self_key_pair: self_key_pair.clone(),
-			key_server_set: key_server_set,
-			acl_storage: acl_storage.clone(),
-			key_storage: key_storage.clone(),
-			admin_address: config.admin_address,
-			preserve_sessions: false,
-		};
-		let net_config = NetConnectionsManagerConfig {
-			listen_address: (config.listener_address.address.clone(), config.listener_address.port),
-			allow_connecting_to_higher_nodes: config.allow_connecting_to_higher_nodes,
-			auto_migrate_enabled: config.auto_migrate_enabled,
-		};
-
-		let core = new_network_cluster(executor, cconfig, net_config)?;
-		let cluster = core.client();
-		core.run()?;
-
+	pub fn new(
+		cluster: Arc<dyn ClusterClient>,
+		acl_storage: Arc<dyn AclStorage>,
+		key_storage: Arc<dyn KeyStorage>,
+	) -> Result<Self, Error> {
 		Ok(KeyServerCore {
 			cluster,
 			acl_storage,
@@ -479,7 +465,7 @@ impl parity_secretstore_primitives::key_server::AdminSessionsServer for KeyServe
 		unimplemented!("TODO")
 	}
 }
-
+/*
 #[cfg(test)]
 pub mod tests {
 	use std::collections::BTreeSet;
@@ -634,19 +620,20 @@ pub mod tests {
 					address: "127.0.0.1".into(),
 					port: start_port + (i as u16),
 				},
-				nodes: key_pairs.iter().enumerate().map(|(j, kp)| (kp.address(),
-					NodeAddress {
-						address: "127.0.0.1".into(),
-						port: start_port + (j as u16),
-					})).collect(),
-				key_server_set_contract_address: None,
 				allow_connecting_to_higher_nodes: false,
 				admin_address: None,
 				auto_migrate_enabled: false,
 			}).collect();
-		let key_servers_set: BTreeMap<NodeId, SocketAddr> = configs[0].nodes.iter()
-			.map(|(k, a)| (k.clone(), format!("{}:{}", a.address, a.port).parse().unwrap()))
-			.collect();
+		let key_servers_set: BTreeMap<NodeId, SocketAddr> = key_pairs
+				.iter()
+				.enumerate()
+				.map(|(j, kp)| (kp.address(),
+					NodeAddress {
+						address: "127.0.0.1".into(),
+						port: start_port + (j as u16),
+					}))
+				.map(|(k, a)| (k.clone(), format!("{}:{}", a.address, a.port).parse().unwrap()))
+				.collect();
 		let key_storages = (0..num_nodes).map(|_| Arc::new(InMemoryKeyStorage::default())).collect::<Vec<_>>();
 		let runtime = Runtime::with_thread_count(4);
 		let key_servers: Vec<_> = configs.into_iter().enumerate().map(|(i, cfg)|
@@ -964,3 +951,4 @@ pub mod tests {
 		// TODO [Test]
 	}
 }
+*/

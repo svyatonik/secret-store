@@ -14,7 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Parity.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeSet;
+pub use parity_secretstore_primitives::connections::*;
+
+/*use std::collections::BTreeSet;
 use std::sync::Arc;
 use crate::key_server_cluster::{Error, NodeId};
 use crate::key_server_cluster::message::Message;
@@ -57,7 +59,7 @@ pub trait ConnectionProvider: Send + Sync {
 	/// Returns the reference to the active node connection or None if the node is not connected.
 	fn connection(&self, node: &NodeId) -> Option<Arc<dyn Connection>>;
 }
-
+*/
 #[cfg(test)]
 pub mod tests {
 	use std::collections::{BTreeSet, VecDeque};
@@ -67,16 +69,25 @@ pub mod tests {
 	use crate::key_server_cluster::{Error, NodeId};
 	use crate::key_server_cluster::message::Message;
 	use super::{ConnectionManager, Connection, ConnectionProvider};
+	use crate::key_server_cluster::io::{deserialize_message, deserialize_header};
 
 	/// Shared messages queue.
 	pub type MessagesQueue = Arc<Mutex<VecDeque<(NodeId, NodeId, Message)>>>;
 
 	/// Single node connections.
 	pub struct TestConnections {
+		core: Arc<Mutex<TestConnectionsData>>,
+	}
+
+	pub struct TestConnectionsManager {
+		core: Arc<Mutex<TestConnectionsData>>,
+	}
+
+	pub struct TestConnectionsData {
 		node: NodeId,
-		is_isolated: AtomicBool,
-		connected_nodes: Mutex<BTreeSet<NodeId>>,
-		disconnected_nodes: Mutex<BTreeSet<NodeId>>,
+		is_isolated: bool,
+		connected_nodes: BTreeSet<NodeId>,
+		disconnected_nodes: BTreeSet<NodeId>,
 		messages: MessagesQueue,
 	}
 
@@ -88,30 +99,37 @@ pub mod tests {
 	}
 
 	impl TestConnections {
-		pub fn isolate(&self) {
-			let connected_nodes = ::std::mem::replace(&mut *self.connected_nodes.lock(), Default::default());
-			self.is_isolated.store(true, Ordering::Relaxed);
-			self.disconnected_nodes.lock().extend(connected_nodes)
-		}
-
-		pub fn disconnect(&self, node: NodeId) {
-			self.connected_nodes.lock().remove(&node);
-			self.disconnected_nodes.lock().insert(node);
-		}
-
-		pub fn exclude(&self, node: NodeId) {
-			self.connected_nodes.lock().remove(&node);
-			self.disconnected_nodes.lock().remove(&node);
-		}
-
-		pub fn include(&self, node: NodeId) {
-			self.connected_nodes.lock().insert(node);
+		pub fn manager(&self) -> Arc<TestConnectionsManager> {
+			Arc::new(TestConnectionsManager { core: self.core.clone() })
 		}
 	}
 
-	impl ConnectionManager for Arc<TestConnections> {
+	impl TestConnectionsManager {
+		pub fn isolate(&self) {
+			let mut core = self.core.lock();
+			let connected_nodes = ::std::mem::replace(&mut core.connected_nodes, Default::default());
+			core.is_isolated = true;
+			core.disconnected_nodes.extend(connected_nodes)
+		}
+
+		pub fn disconnect(&self, node: NodeId) {
+			self.core.lock().connected_nodes.remove(&node);
+			self.core.lock().disconnected_nodes.insert(node);
+		}
+
+		pub fn exclude(&self, node: NodeId) {
+			self.core.lock().connected_nodes.remove(&node);
+			self.core.lock().disconnected_nodes.remove(&node);
+		}
+
+		pub fn include(&self, node: NodeId) {
+			self.core.lock().connected_nodes.insert(node);
+		}
+	}
+
+	impl parity_secretstore_primitives::connections::ConnectionManager for TestConnectionsManager {
 		fn provider(&self) -> Arc<dyn ConnectionProvider> {
-			self.clone()
+			Arc::new(TestConnections { core: self.core.clone() })
 		}
 
 		fn connect(&self) {}
@@ -119,22 +137,24 @@ pub mod tests {
 
 	impl ConnectionProvider for TestConnections {
 		fn connected_nodes(&self) -> Result<BTreeSet<NodeId>, Error> {
-			match self.is_isolated.load(Ordering::Relaxed) {
-				false => Ok(self.connected_nodes.lock().clone()),
+			let core = self.core.lock();
+			match core.is_isolated {
+				false => Ok(core.connected_nodes.clone()),
 				true => Err(Error::NodeDisconnected),
 			}
 		}
 
 		fn disconnected_nodes(&self) -> BTreeSet<NodeId> {
-			self.disconnected_nodes.lock().clone()
+			self.core.lock().disconnected_nodes.clone()
 		}
 
 		fn connection(&self, node: &NodeId) -> Option<Arc<dyn Connection>> {
-			match self.connected_nodes.lock().contains(node) {
+			let core = self.core.lock();
+			match core.connected_nodes.contains(node) {
 				true => Some(Arc::new(TestConnection {
-					from: self.node,
+					from: core.node,
 					to: *node,
-					messages: self.messages.clone(),
+					messages: core.messages.clone(),
 				})),
 				false => None,
 			}
@@ -154,7 +174,9 @@ pub mod tests {
 			format!("{}", self.to)
 		}
 
-		fn send_message(&self, message: Message) {
+		fn send_message(&self, message: Vec<u8>) {
+			let header = deserialize_header(&message).unwrap();
+			let message = deserialize_message(&header, message[18..].to_vec()).unwrap();
 			self.messages.lock().push_back((self.from, self.to, message))
 		}
 	}
@@ -166,11 +188,13 @@ pub mod tests {
 	) -> Arc<TestConnections> {
 		let is_isolated = !nodes.remove(&node);
 		Arc::new(TestConnections {
-			node,
-			is_isolated: AtomicBool::new(is_isolated),
-			connected_nodes: Mutex::new(nodes),
-			disconnected_nodes: Default::default(),
-			messages,
+			core: Arc::new(Mutex::new(TestConnectionsData {
+				node,
+				is_isolated,
+				connected_nodes: nodes,
+				disconnected_nodes: Default::default(),
+				messages,
+			})),
 		})
 	}
 }

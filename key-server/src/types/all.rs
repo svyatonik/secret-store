@@ -45,38 +45,11 @@ pub struct NodeAddress {
 	pub port: u16,
 }
 
-/// Secret store configuration
-#[derive(Debug)]
-pub struct ServiceConfiguration {
-	/// HTTP listener address. If None, HTTP API is disabled.
-	pub listener_address: Option<NodeAddress>,
-	/// Service contract address.
-	pub service_contract_address: Option<ContractAddress>,
-	/// Server key generation service contract address.
-	pub service_contract_srv_gen_address: Option<ContractAddress>,
-	/// Server key retrieval service contract address.
-	pub service_contract_srv_retr_address: Option<ContractAddress>,
-	/// Document key store service contract address.
-	pub service_contract_doc_store_address: Option<ContractAddress>,
-	/// Document key shadow retrieval service contract address.
-	pub service_contract_doc_sretr_address: Option<ContractAddress>,
-	/// ACL check contract address. If None, everyone has access to all keys. Useful for tests only.
-	pub acl_check_contract_address: Option<ContractAddress>,
-	/// Cluster configuration.
-	pub cluster_config: ClusterConfiguration,
-	// Allowed CORS domains
-	pub cors: Option<Vec<String>>,
-}
-
 /// Key server cluster configuration
 #[derive(Debug)]
 pub struct ClusterConfiguration {
 	/// This node address.
 	pub listener_address: NodeAddress,
-	/// All cluster nodes addresses.
-	pub nodes: BTreeMap<NodeId, NodeAddress>,
-	/// Key Server Set contract address. If None, servers from 'nodes' map are used.
-	pub key_server_set_contract_address: Option<ContractAddress>,
 	/// Allow outbound connections to 'higher' nodes.
 	/// This is useful for tests, but slower a bit for production.
 	pub allow_connecting_to_higher_nodes: bool,

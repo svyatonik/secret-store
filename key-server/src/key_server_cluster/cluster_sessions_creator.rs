@@ -95,7 +95,7 @@ pub struct SessionCreatorCore {
 
 impl SessionCreatorCore {
 	/// Create new session creator core.
-	pub fn new(config: &ClusterConfiguration) -> Self {
+	pub fn new<NetworkAddress>(config: &ClusterConfiguration<NetworkAddress>) -> Self {
 		SessionCreatorCore {
 			self_node_id: config.self_key_pair.address(),
 			acl_storage: config.acl_storage.clone(),
