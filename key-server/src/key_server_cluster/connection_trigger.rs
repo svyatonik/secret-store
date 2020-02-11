@@ -97,11 +97,6 @@ pub struct TriggerConnections {
 }
 
 impl<NetworkAddress> SimpleConnectionTrigger<NetworkAddress> {
-	/// Create new simple from cluster configuration.
-	pub fn with_config(config: &ClusterConfiguration<NetworkAddress>) -> Self {
-		Self::new(config.key_server_set.clone(), config.self_key_pair.clone(), config.admin_address)
-	}
-
 	/// Create new simple connection trigger.
 	pub fn new(key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>, self_key_pair: Arc<dyn KeyServerKeyPair>, admin_address: Option<Address>) -> Self {
 		SimpleConnectionTrigger {

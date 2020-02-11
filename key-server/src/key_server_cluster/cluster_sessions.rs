@@ -21,8 +21,10 @@ use std::collections::{VecDeque, BTreeMap, BTreeSet};
 use futures::{oneshot, Oneshot, Complete, Future};
 use lazy_static::lazy_static;
 use parking_lot::{Mutex, RwLock, Condvar};
-use ethereum_types::H256;
+use ethereum_types::{Address, H256};
 use parity_crypto::publickey::Secret;
+use parity_secretstore_primitives::acl_storage::AclStorage;
+use parity_secretstore_primitives::key_storage::{KeyStorage, KeyShare};
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::network::ConnectionProvider;
 use crate::key_server_cluster::{Error, NodeId, SessionId};
@@ -226,11 +228,21 @@ pub enum ClusterSessionsContainerState {
 
 impl ClusterSessions {
 	/// Create new cluster sessions container.
-	pub fn new<NetworkAddress>(config: &ClusterConfiguration<NetworkAddress>, servers_set_change_session_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>) -> Self {
+	pub fn new(
+		self_node_id: NodeId,
+		admin_address: Option<Address>,
+		key_storage: Arc<dyn KeyStorage>,
+		acl_storage: Arc<dyn AclStorage>,
+		servers_set_change_session_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>,
+	) -> Self {
 		let container_state = Arc::new(Mutex::new(ClusterSessionsContainerState::Idle));
-		let creator_core = Arc::new(SessionCreatorCore::new(config));
+		let creator_core = Arc::new(SessionCreatorCore::new(
+			self_node_id,
+			key_storage,
+			acl_storage,
+		));
 		ClusterSessions {
-			self_node_id: config.self_key_pair.address(),
+			self_node_id,
 			generation_sessions: ClusterSessionsContainer::new(GenerationSessionCreator {
 				core: creator_core.clone(),
 				make_faulty_generation_sessions: AtomicBool::new(false),
@@ -253,7 +265,7 @@ impl ClusterSessions {
 			admin_sessions: ClusterSessionsContainer::new(AdminSessionCreator {
 				core: creator_core.clone(),
 				servers_set_change_session_creator_connector: servers_set_change_session_creator_connector,
-				admin_address: config.admin_address.clone(),
+				admin_address: admin_address,
 			}, container_state),
 			creator_core: creator_core,
 		}

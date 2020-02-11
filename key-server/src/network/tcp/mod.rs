@@ -96,7 +96,7 @@ struct NetConnectionsData {
 	/// Connections trigger.
 	trigger: Mutex<Box<dyn ConnectionTrigger<SocketAddr>>>,
 	/// Mutable connection data.
-	container: NetConnectionsContainer,
+	container: Arc<NetConnectionsContainer>,
 }
 
 /// Network connections container. This is the only mutable data of NetConnectionsManager.
@@ -150,13 +150,28 @@ pub struct TcpConfiguration {
 	pub self_key_pair: Arc<dyn KeyServerKeyPair>,
 }
 
+impl NetConnectionsContainer {
+	pub fn new(
+		is_isolated: bool,
+		nodes: BTreeMap<NodeId, SocketAddr>,
+	) -> Self {
+		NetConnectionsContainer {
+			data: Arc::new(RwLock::new(NetConnectionsContainerData {
+				is_isolated,
+				nodes,
+				connections: BTreeMap::new(),
+			})),
+		}
+	}
+}
+
 impl NetConnectionsManager {
 	/// Create new network connections manager.
 	pub fn new(
 		executor: Executor,
 		message_processor: Arc<dyn MessageProcessor>,
 		trigger: Box<dyn ConnectionTrigger<SocketAddr>>,
-		container: NetConnectionsContainer,
+		container: Arc<NetConnectionsContainer>,
 		config: TcpConfiguration,
 		net_config: NetConnectionsManagerConfig,
 	) -> Result<Self, Error> {
@@ -187,7 +202,7 @@ impl NetConnectionsManager {
 
 impl ConnectionManager for NetConnectionsManager {
 	fn provider(&self) -> Arc<dyn ConnectionProvider> {
-		Arc::new(self.data.container.clone())
+		self.data.container.clone()
 	}
 
 	fn connect(&self) {

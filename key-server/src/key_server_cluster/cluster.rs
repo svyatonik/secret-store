@@ -204,7 +204,7 @@ pub struct ClusterData<C: ConnectionManager + ?Sized> {
 	pub servers_set_change_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>,
 }
 
-pub fn new_cluster_client<C: ConnectionManager + ?Sized, NetworkAddress: Send + Sync + Clone + 'static>(
+/*pub fn new_cluster_client<C: ConnectionManager + ?Sized, NetworkAddress: Send + Sync + Clone + 'static>(
 	config: ClusterConfiguration<NetworkAddress>,
 	connection_manager: Arc<C>,
 	connection_provider: Arc<dyn ConnectionProvider>,
@@ -228,7 +228,7 @@ pub fn new_cluster_client<C: ConnectionManager + ?Sized, NetworkAddress: Send + 
 	));
 
 	ClusterCore::new(sessions, message_processor, connection_manager, servers_set_change_creator_connector, config)
-}
+}*/
 
 /*/// Create new network-backed cluster.
 pub fn new_network_cluster(

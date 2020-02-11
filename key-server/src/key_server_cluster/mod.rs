@@ -19,7 +19,7 @@ use super::types::ServerKeyId;
 pub use super::types::{Error, NodeId, NodePublic, Requester, EncryptedDocumentKeyShadow};
 pub use super::serialization::{SerializableSignature, SerializableH256, SerializableSecret, SerializablePublic,
 	SerializableRequester, SerializableMessageHash, SerializableAddress};
-pub use self::cluster::{ClusterCore, ClusterConfiguration, ClusterClient, new_cluster_client};
+pub use self::cluster::{ClusterCore, ClusterConfiguration, ClusterClient/*, new_cluster_client*/};
 pub use self::cluster_sessions::{ClusterSession, ClusterSessionsListener, WaitableSession};
 #[cfg(test)]
 pub use self::cluster::tests::DummyClusterClient;
@@ -57,13 +57,13 @@ pub use self::client_sessions::generation_session;
 pub use self::client_sessions::signing_session_ecdsa;
 pub use self::client_sessions::signing_session_schnorr;
 
-mod cluster;
+pub mod cluster;
 mod cluster_connections;
 pub mod cluster_message_processor;
-mod cluster_sessions;
+pub mod cluster_sessions;
 mod cluster_sessions_creator;
 pub mod connection_trigger;
-mod connection_trigger_with_migration;
+pub mod connection_trigger_with_migration;
 pub mod io;
 mod jobs;
 pub mod math;

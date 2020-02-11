@@ -95,11 +95,15 @@ pub struct SessionCreatorCore {
 
 impl SessionCreatorCore {
 	/// Create new session creator core.
-	pub fn new<NetworkAddress>(config: &ClusterConfiguration<NetworkAddress>) -> Self {
+	pub fn new(
+		self_node_id: NodeId,
+		key_storage: Arc<dyn KeyStorage>,
+		acl_storage: Arc<dyn AclStorage>,
+	) -> Self {
 		SessionCreatorCore {
-			self_node_id: config.self_key_pair.address(),
-			acl_storage: config.acl_storage.clone(),
-			key_storage: config.key_storage.clone(),
+			self_node_id,
+			acl_storage,
+			key_storage,
 			session_counter: AtomicUsize::new(0),
 			max_nonce: RwLock::new(BTreeMap::new()),
 		}

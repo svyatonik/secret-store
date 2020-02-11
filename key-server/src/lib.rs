@@ -22,7 +22,7 @@ mod key_server;
 mod serialization;
 mod blockchain;
 mod migration;
-mod network;
+pub mod network;
 
 use std::sync::Arc;
 use parity_runtime::Executor;
@@ -37,11 +37,12 @@ use parity_secretstore_primitives::{
 	acl_storage::AclStorage,
 	key_server_set::KeyServerSet,
 	key_storage::KeyStorage,
+	key_server_key_pair::KeyServerKeyPair,
 };
-
+/*
 /// Start new key server instance
 pub fn start<NetworkAddress: Clone + Send + Sync + 'static>(
-	self_key_pair: Arc<dyn parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair>,
+	self_key_pair: Arc<dyn KeyServerKeyPair>,
 	config: ClusterConfiguration,
 	executor: Executor,
 	acl_storage: Arc<dyn AclStorage>,
@@ -69,3 +70,159 @@ pub fn start<NetworkAddress: Clone + Send + Sync + 'static>(
 
 	Ok(key_server)
 }
+*/	
+/// 
+pub struct Builder {
+	self_key_pair: Option<Arc<dyn KeyServerKeyPair>>,
+	acl_storage: Option<Arc<dyn AclStorage>>,
+	key_storage: Option<Arc<dyn KeyStorage>>,
+	config: Option<ClusterConfiguration>,
+}
+
+impl Builder {
+	pub fn new() -> Self {
+		Builder {
+			self_key_pair: None,
+			acl_storage: None,
+			key_storage: None,
+			config: None,
+		}
+	}
+
+	pub fn with_self_key_pair(mut self, self_key_pair: Arc<dyn KeyServerKeyPair>) -> Self {
+		self.self_key_pair = Some(self_key_pair);
+		self
+	}
+	
+	pub fn with_acl_storage(mut self, acl_storage: Arc<dyn AclStorage>) -> Self {
+		self.acl_storage = Some(acl_storage);
+		self
+	}
+
+	pub fn with_key_storage(mut self, key_storage: Arc<dyn KeyStorage>) -> Self {
+		self.key_storage = Some(key_storage);
+		self
+	}
+
+	pub fn with_config(mut self, config: ClusterConfiguration) -> Self {
+		self.config = Some(config);
+		self
+	}
+
+	pub fn build_for_tcp(
+		self,
+		executor: Executor,
+		tcp_config: crate::network::tcp::TcpConfiguration,
+		key_server_set: Arc<dyn KeyServerSet<NetworkAddress=std::net::SocketAddr>>,
+	) -> Result<Arc<key_server::KeyServerImpl>, Error> {
+		let self_key_pair = self.self_key_pair.ok_or_else(|| Error::Internal("Invalid initialization".into()))?;
+		let acl_storage = self.acl_storage.ok_or_else(|| Error::Internal("Invalid initialization".into()))?;
+		let key_storage = self.key_storage.ok_or_else(|| Error::Internal("Invalid initialization".into()))?;
+		let config = self.config.ok_or_else(|| Error::Internal("Invalid initialization".into()))?;
+
+		let connection_trigger: Box<dyn crate::key_server_cluster::connection_trigger::ConnectionTrigger<std::net::SocketAddr>> = match config.auto_migrate_enabled {
+			false => Box::new(crate::key_server_cluster::connection_trigger::SimpleConnectionTrigger::new(
+				key_server_set.clone(),
+				self_key_pair.clone(),
+				config.admin_address,
+			)),
+			true if config.admin_address.is_none() => Box::new(crate::key_server_cluster::connection_trigger_with_migration::ConnectionTriggerWithMigration::new(
+				key_server_set.clone(),
+				self_key_pair.clone(),
+			)),
+			true => return Err(Error::Internal(
+				"secret store admininstrator address key is specified with auto-migration enabled".into()
+			)),
+		};
+		let servers_set_change_creator_connector = connection_trigger.servers_set_change_creator_connector();
+		let sessions = Arc::new(crate::key_server_cluster::cluster_sessions::ClusterSessions::new(
+			self_key_pair.address(),
+			config.admin_address,
+			key_storage.clone(),
+			acl_storage.clone(),
+			servers_set_change_creator_connector.clone(),
+		));
+
+		let mut nodes = key_server_set.snapshot().current_set;
+		let is_isolated = nodes.remove(&self_key_pair.address()).is_none();
+		let connection_provider = Arc::new(crate::network::tcp::NetConnectionsContainer::new(is_isolated, nodes));
+		let message_processor = Arc::new(crate::key_server_cluster::cluster_message_processor::SessionsMessageProcessor::new(
+			self_key_pair.clone(),
+			servers_set_change_creator_connector.clone(),
+			sessions.clone(),
+			connection_provider.clone(),
+		));
+		let connection_manager = Arc::new(crate::network::tcp::NetConnectionsManager::new(
+			executor,
+			message_processor.clone(),
+			connection_trigger,
+			connection_provider,
+			crate::network::tcp::TcpConfiguration {
+				listener_address: crate::network::tcp::NodeAddress {
+					address: "127.0.0.1".into(),
+					port: 11000u16,
+				},
+				self_key_pair: self_key_pair.clone(),
+			},
+			crate::network::tcp::NetConnectionsManagerConfig {
+				allow_connecting_to_higher_nodes: true,
+				auto_migrate_enabled: true,
+				listen_address: ("127.0.0.1".into(), 11000u16),
+			},
+		)?);
+		connection_manager.start()?;
+		let cluster = crate::key_server_cluster::cluster::ClusterCore::new(
+			sessions,
+			message_processor,
+			connection_manager,
+			servers_set_change_creator_connector,
+			crate::key_server_cluster::cluster::ClusterConfiguration {
+				acl_storage: acl_storage.clone(),
+				admin_address: config.admin_address,
+				auto_migrate_enabled: true,
+				key_server_set: key_server_set.clone(),
+				key_storage: key_storage.clone(),
+				preserve_sessions: false,
+				self_key_pair: self_key_pair.clone(),
+			},
+		)?;
+		/*let cluster = crate::key_server_cluster::new_cluster_client(
+			crate::key_server_cluster::cluster::ClusterConfiguration {
+				acl_storage: acl_storage.clone(),
+				admin_address: config.admin_address,
+				auto_migrate_enabled: true,
+				key_server_set: key_server_set.clone(),
+				key_storage: key_storage.clone(),
+				preserve_sessions: false,
+				self_key_pair: self_key_pair.clone(),
+			},
+			connection_manager,
+			connection_provider,
+		)?;*/
+/*			executor,
+			message_processor,
+			connection_trigger,
+			crate::network::tcp::NetConnectionsContainer::new(is_isolated, nodes),
+			tcp_config,
+			NetConnectionsManagerConfig {
+
+			},
+		);*/
+
+		key_server::KeyServerImpl::new(
+			cluster.client(),
+			acl_storage,
+			key_storage,
+		).map(|key_server| Arc::new(key_server))
+	}
+}
+
+/*
+
+Network deps: MessageProcessor + ConnectionTrigger
+MessageProcessor deps:
+	ServersSetChangeSessionCreatorConnector
+	ClusterSessions
+	ConnectionProvider
+
+*/
