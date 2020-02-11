@@ -30,6 +30,7 @@ use parity_runtime::Executor;
 pub use crate::network::{ConnectionProvider, ConnectionManager, Connection};
 pub use crate::types::{ServerKeyId, EncryptedDocumentKey, RequestSignature, Public,
 	Error, NodeAddress, ClusterConfiguration};
+pub use crate::key_server::KeyServerImpl;
 pub use crate::traits::KeyServer;
 pub use crate::blockchain::{SecretStoreChain, ContractAddress, BlockId, BlockNumber, NewBlocksNotify, Filter};
 pub use key_server_cluster::message::Message;
@@ -39,38 +40,7 @@ use parity_secretstore_primitives::{
 	key_storage::KeyStorage,
 	key_server_key_pair::KeyServerKeyPair,
 };
-/*
-/// Start new key server instance
-pub fn start<NetworkAddress: Clone + Send + Sync + 'static>(
-	self_key_pair: Arc<dyn KeyServerKeyPair>,
-	config: ClusterConfiguration,
-	executor: Executor,
-	acl_storage: Arc<dyn AclStorage>,
-	key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>,
-	key_storage: Arc<dyn KeyStorage>,
-	connection_manager: Arc<dyn ConnectionManager>,
-	connection_provider: Arc<dyn ConnectionProvider>,
-) -> Result<Arc<key_server::KeyServerImpl>, Error> {
-	let cluster = crate::key_server_cluster::new_cluster_client(
-		crate::key_server_cluster::ClusterConfiguration {
-			self_key_pair,
-			key_server_set,
-			key_storage: key_storage.clone(),
-			acl_storage: acl_storage.clone(),
-			admin_address: config.admin_address,
-			auto_migrate_enabled: config.auto_migrate_enabled,
-			preserve_sessions: false,
-		},
-		connection_manager,
-		connection_provider,
-	)?;
-	cluster.run()?;
 
-	let key_server = Arc::new(key_server::KeyServerImpl::new(cluster.client(), acl_storage, key_storage)?);
-
-	Ok(key_server)
-}
-*/	
 /// 
 pub struct Builder {
 	self_key_pair: Option<Arc<dyn KeyServerKeyPair>>,
@@ -114,7 +84,7 @@ impl Builder {
 		executor: Executor,
 		tcp_config: crate::network::tcp::TcpConfiguration,
 		key_server_set: Arc<dyn KeyServerSet<NetworkAddress=std::net::SocketAddr>>,
-	) -> Result<Arc<key_server::KeyServerImpl>, Error> {
+	) -> Result<Arc<KeyServerImpl>, Error> {
 		let self_key_pair = self.self_key_pair.ok_or_else(|| Error::Internal("Invalid initialization".into()))?;
 		let acl_storage = self.acl_storage.ok_or_else(|| Error::Internal("Invalid initialization".into()))?;
 		let key_storage = self.key_storage.ok_or_else(|| Error::Internal("Invalid initialization".into()))?;

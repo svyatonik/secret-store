@@ -1,0 +1,18 @@
+[package]
+name = "parity-secretstore-standalone"
+version = "1.0.0"
+license = "GPL-3.0"
+authors = ["Parity Technologies <admin@parity.io>"]
+edition = "2018"
+
+[[bin]]
+name = "secretsore-standalone"
+path = "src/main.rs"
+
+[dependencies]
+key-server = { package = "parity-secretstore-key-server", path = "../../key-server" }
+primitives = { package = "parity-secretstore-primitives", path = "../../primitives" }
+env_logger = "0.7.0"
+log = "0.4.8"
+parity-crypto = { version = "0.4.2", features = ["publickey"] }
+parity-runtime = { git = "https://github.com/paritytech/parity-common", branch = "ParityRuntime", features = ["test-helpers"] }
