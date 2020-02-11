@@ -25,7 +25,6 @@ mod migration;
 pub mod network;
 
 use std::sync::Arc;
-use parity_runtime::Executor;
 
 pub use crate::network::{ConnectionProvider, ConnectionManager, Connection};
 pub use crate::types::{ServerKeyId, EncryptedDocumentKey, RequestSignature, Public,
@@ -36,6 +35,7 @@ pub use crate::blockchain::{SecretStoreChain, ContractAddress, BlockId, BlockNum
 pub use key_server_cluster::message::Message;
 use parity_secretstore_primitives::{
 	acl_storage::AclStorage,
+	executor::TokioHandle,
 	key_server_set::KeyServerSet,
 	key_storage::KeyStorage,
 	key_server_key_pair::KeyServerKeyPair,
@@ -81,7 +81,7 @@ impl Builder {
 
 	pub fn build_for_tcp(
 		self,
-		executor: Executor,
+		executor: TokioHandle,
 		tcp_config: crate::network::tcp::TcpConfiguration,
 		key_server_set: Arc<dyn KeyServerSet<NetworkAddress=std::net::SocketAddr>>,
 	) -> Result<Arc<KeyServerImpl>, Error> {

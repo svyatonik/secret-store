@@ -16,31 +16,34 @@
 
 use std::sync::Arc;
 use parity_crypto::publickey::KeyPair;
-use parity_runtime::Executor;
 use key_server::{ClusterConfiguration, KeyServerImpl, NodeAddress};
 use primitives::{
 	acl_storage::InMemoryPermissiveAclStorage,
+	executor::{tokio_runtime, TokioHandle},
 	key_server_key_pair::InMemoryKeyServerKeyPair,
 	key_server_set::InMemoryKeyServerSet,
 	key_storage::InMemoryKeyStorage,
 };
 
 fn main() {
-	env_logger::Builder::new().parse_filters(std::env::var("RUST_LOG").unwrap().as_str()).init();
+	env_logger::Builder::new()
+		.parse_filters(match std::env::var("RUST_LOG") {
+			Ok(log_filter) => log_filter,
+			Err(_) => "secretstore=info,secrestore_net=info".into(),
+		}.as_str())
+		.init();
 
-	let runtime = parity_runtime::Runtime::with_default_thread_count();
+	let mut runtime = tokio_runtime().unwrap();
 	let executor = runtime.executor();
 
 	(0..3).for_each(move |index| {
-		let executor = executor.clone();
-		std::thread::spawn(move || start_key_server(index, executor));
+		let _ = start_key_server(index, executor.clone());
 	});
 
-	let runtime_handle: parity_runtime::RuntimeHandle = runtime.into();
-	runtime_handle.wait().unwrap();
+	runtime.block_on_std(futures::future::pending::<()>());
 }
 
-fn start_key_server(key_server_index: usize, executor: Executor) -> Arc<KeyServerImpl> {
+fn start_key_server(key_server_index: usize, executor: TokioHandle) -> Arc<KeyServerImpl> {
 	let key_servers_key_pairs = [
 		KeyPair::from_secret_slice(&[1u8; 32]).unwrap(),
 		KeyPair::from_secret_slice(&[2u8; 32]).unwrap(),

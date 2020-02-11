@@ -686,7 +686,7 @@ mod tests {
 	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
 	use parity_secretstore_primitives::key_server_set::InMemoryKeyServerSet;
 	use parity_secretstore_primitives::key_storage::InMemoryKeyStorage;
-	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
+	use parity_secretstore_primitives::key_server_key_pair::{KeyServerKeyPair, InMemoryKeyServerKeyPair};
 	use crate::key_server_cluster::{Error, math};
 	use crate::key_server_cluster::cluster::ClusterConfiguration;
 	use crate::key_server_cluster::connection_trigger::SimpleServersSetChangeSessionCreatorConnector;
@@ -697,18 +697,20 @@ mod tests {
 
 	pub fn make_cluster_sessions() -> ClusterSessions {
 		let key_pair = Random.generate().unwrap();
-		let config = ClusterConfiguration {
-			self_key_pair: Arc::new(InMemoryKeyServerKeyPair::new(key_pair.clone())),
-			key_server_set: Arc::new(InMemoryKeyServerSet::new(false, vec![(key_pair.address(), format!("127.0.0.1:{}", 100).parse().unwrap())].into_iter().collect())),
-			key_storage: Arc::new(InMemoryKeyStorage::default()),
-			acl_storage: Arc::new(InMemoryPermissiveAclStorage::default()),
-			admin_address: Some(math::generate_random_address().unwrap()),
-			auto_migrate_enabled: false,
-			preserve_sessions: false,
-		};
-		ClusterSessions::new(&config, Arc::new(SimpleServersSetChangeSessionCreatorConnector {
-			admin_address: Some(math::generate_random_address().unwrap()),
-		}))
+		let self_key_pair = Arc::new(InMemoryKeyServerKeyPair::new(key_pair.clone()));
+		let admin_address = Some(math::generate_random_address().unwrap());
+		let key_storage = Arc::new(InMemoryKeyStorage::default());
+		let acl_storage = Arc::new(InMemoryPermissiveAclStorage::default());
+		let key_server_set = Arc::new(InMemoryKeyServerSet::new(false, vec![(key_pair.address(), format!("127.0.0.1:{}", 100).parse().unwrap())].into_iter().collect()));
+		ClusterSessions::new(
+			self_key_pair.address(),
+			admin_address,
+			key_storage,
+			acl_storage,
+			Arc::new(SimpleServersSetChangeSessionCreatorConnector {
+				admin_address,
+			}),
+		)
 	}
 
 	#[test]

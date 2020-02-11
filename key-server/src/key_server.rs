@@ -24,7 +24,6 @@ use futures03::{
 use parking_lot::Mutex;
 use parity_crypto::DEFAULT_MAC;
 use parity_crypto::publickey::public_to_address;
-use parity_runtime::Executor;
 use parity_secretstore_primitives::acl_storage::AclStorage;
 use parity_secretstore_primitives::key_server_set::KeyServerSet;
 use parity_secretstore_primitives::key_storage::KeyStorage;

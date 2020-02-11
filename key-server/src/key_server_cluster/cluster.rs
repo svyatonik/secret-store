@@ -19,7 +19,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use parking_lot::RwLock;
 use parity_crypto::publickey::{Public, Signature, Random, Generator};
 use ethereum_types::{Address, H256};
-use parity_runtime::Executor;
 use log::trace;
 use parity_secretstore_primitives::acl_storage::AclStorage;
 use parity_secretstore_primitives::key_server_set::KeyServerSet;
@@ -282,9 +281,15 @@ pub fn new_test_cluster(
 	let connections = Arc::new(new_test_connections(messages, config.self_key_pair.address(), nodes.keys().cloned().collect()));
 	let connections_manager = connections.manager();
 
-	let connection_trigger = Box::new(SimpleConnectionTrigger::with_config(&config));
+	let connection_trigger = Box::new(SimpleConnectionTrigger::new(config.key_server_set.clone(), config.self_key_pair.clone(), config.admin_address));
 	let servers_set_change_creator_connector = connection_trigger.servers_set_change_creator_connector();
-	let mut sessions = ClusterSessions::new(&config, servers_set_change_creator_connector.clone());
+	let mut sessions = ClusterSessions::new(
+		config.self_key_pair.address(),
+		config.admin_address,
+		config.key_storage.clone(),
+		config.acl_storage.clone(),
+		servers_set_change_creator_connector.clone(),
+	);
 	if config.preserve_sessions {
 		sessions.preserve_sessions();
 	}

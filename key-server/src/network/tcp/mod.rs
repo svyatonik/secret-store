@@ -34,8 +34,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::timer::{Interval, timeout::Error as TimeoutError};
 use tokio_io::IoFuture;
 use parity_crypto::publickey::KeyPair;
-use parity_runtime::Executor;
 use log::{error, trace, warn};
+use parity_secretstore_primitives::executor::TokioHandle;
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::network::{ConnectionProvider, ConnectionManager, Connection};
 use crate::key_server_cluster::{Error, NodeId, ClusterConfiguration};
@@ -88,7 +88,7 @@ struct NetConnectionsData {
 	/// Allow connecting to 'higher' nodes.
 	allow_connecting_to_higher_nodes: bool,
 	/// Reference to tokio task executor.
-	executor: Executor,
+	executor: TokioHandle,
 	/// Key pair of this node.
 	self_key_pair: Arc<dyn KeyServerKeyPair>,
 	/// Network messages processor.
@@ -118,7 +118,7 @@ pub struct NetConnectionsContainerData {
 
 /// Network connection to single key server node.
 pub struct NetConnection {
-	executor: Executor,
+	executor: TokioHandle,
 	/// Id of the peer node.
 	node_id: NodeId,
 	/// Address of the peer node.
@@ -168,7 +168,7 @@ impl NetConnectionsContainer {
 impl NetConnectionsManager {
 	/// Create new network connections manager.
 	pub fn new(
-		executor: Executor,
+		executor: TokioHandle,
 		message_processor: Arc<dyn MessageProcessor>,
 		trigger: Box<dyn ConnectionTrigger<SocketAddr>>,
 		container: Arc<NetConnectionsContainer>,
@@ -238,7 +238,7 @@ impl ConnectionProvider for NetConnectionsContainer {
 
 impl NetConnection {
 	/// Create new connection.
-	pub fn new(executor: Executor, is_inbound: bool, connection: IoConnection) -> NetConnection {
+	pub fn new(executor: TokioHandle, is_inbound: bool, connection: IoConnection) -> NetConnection {
 		NetConnection {
 			executor,
 			node_id: connection.node_id,
@@ -550,10 +550,8 @@ fn net_connect_disconnected(data: Arc<NetConnectionsData>) {
 }
 
 /// Schedule future execution.
-fn execute<F: Future<Item = (), Error = ()> + Send + 'static>(executor: &Executor, f: F) {
-	if let Err(err) = future::Executor::execute(executor, Box::new(f)) {
-		error!("Secret store runtime unable to spawn task. Runtime is shutting down. ({:?})", err);
-	}
+fn execute<F: Future<Item = (), Error = ()> + Send + 'static>(executor: &TokioHandle, f: F) {
+	executor.spawn(f);
 }
 
 /// Try to update active nodes set from connection trigger.
