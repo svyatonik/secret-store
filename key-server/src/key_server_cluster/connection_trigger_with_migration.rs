@@ -15,18 +15,17 @@
 // along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeSet, BTreeMap};
-use std::net::SocketAddr;
 use std::sync::Arc;
 use ethereum_types::H256;
 use log::{trace, warn};
-use parity_crypto::publickey::{Address, Public};
+use parity_crypto::publickey::Address;
 use parking_lot::Mutex;
 use parity_secretstore_primitives::key_server_set::{KeyServerSet, KeyServerSetSnapshot, KeyServerSetMigration};
-use crate::key_server_cluster::cluster::{ClusterConfiguration, ServersSetChangeParams};
+use crate::key_server_cluster::cluster::ServersSetChangeParams;
 use crate::key_server_cluster::cluster_sessions::{AdminSession, ClusterSession};
 use crate::key_server_cluster::jobs::servers_set_change_access_job::ordered_nodes_hash;
 use crate::key_server_cluster::connection_trigger::{Maintain, ConnectionsAction, ConnectionTrigger,
-	ServersSetChangeSessionCreatorConnector, TriggerConnections};
+	ServersSetChangeSessionCreatorConnector};
 use crate::types::{Error, NodeId};
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 
@@ -44,8 +43,6 @@ pub struct ConnectionTriggerWithMigration<NetworkAddress> {
 	session_action: Option<SessionAction>,
 	/// Currenty connected nodes.
 	connected: BTreeSet<NodeId>,
-	/// Trigger migration connections.
-	connections: TriggerConnections,
 	/// Trigger migration session.
 	session: TriggerSession<NetworkAddress>,
 }
@@ -111,11 +108,6 @@ struct TriggerSession<NetworkAddress> {
 }
 
 impl<NetworkAddress: Send + Sync + Clone> ConnectionTriggerWithMigration<NetworkAddress> {
-	/// Create new simple from cluster configuration.
-	pub fn with_config(config: &ClusterConfiguration<NetworkAddress>) -> Self {
-		Self::new(config.key_server_set.clone(), config.self_key_pair.clone())
-	}
-
 	/// Create new trigge with migration.
 	pub fn new(key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>, self_key_pair: Arc<dyn KeyServerKeyPair>) -> Self {
 		let snapshot = key_server_set.snapshot();
@@ -126,9 +118,6 @@ impl<NetworkAddress: Send + Sync + Clone> ConnectionTriggerWithMigration<Network
 			key_server_set: key_server_set.clone(),
 			snapshot: snapshot,
 			connected: BTreeSet::new(),
-			connections: TriggerConnections {
-				self_key_pair: self_key_pair.clone(),
-			},
 			session: TriggerSession {
 				connector: Arc::new(ServersSetChangeSessionCreatorConnectorWithMigration {
 					self_node_id: self_key_pair.address(),
@@ -471,7 +460,7 @@ mod tests {
 	use crate::key_server_cluster::connection_trigger::ConnectionsAction;
 	use super::{MigrationState, SessionState, SessionAction, migration_state, maintain_session,
 		maintain_connections, select_master_node};
-	use ethereum_types::{Address, H256, H512};
+	use ethereum_types::{Address, H256};
 
 	fn default_snapshot() -> KeyServerSetSnapshot<SocketAddr> {
 		KeyServerSetSnapshot {

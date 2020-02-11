@@ -21,7 +21,7 @@ use log::warn;
 use futures::Oneshot;
 use parking_lot::Mutex;
 use ethereum_types::H256;
-use parity_crypto::publickey::{Address, Public, Signature};
+use parity_crypto::publickey::{Address, Signature};
 use parity_secretstore_primitives::key_storage::KeyStorage;
 use crate::key_server_cluster::{Error, NodeId, SessionId};
 use crate::key_server_cluster::math;
@@ -1052,7 +1052,7 @@ pub mod tests {
 	use std::sync::Arc;
 	use std::collections::{VecDeque, BTreeMap, BTreeSet};
 	use ethereum_types::H256;
-	use parity_crypto::publickey::{Address, Random, Generator, Public, Signature, KeyPair, public_to_address, sign};
+	use parity_crypto::publickey::{Address, Random, Generator, Signature, KeyPair, public_to_address, sign};
 	use parity_secretstore_primitives::key_storage::KeyStorage;
 	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
 	use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;

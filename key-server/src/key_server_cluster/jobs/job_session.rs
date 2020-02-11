@@ -392,7 +392,7 @@ fn consensus_unreachable(rejects: &BTreeMap<NodeId, bool>) -> Error {
 pub mod tests {
 	use std::collections::{VecDeque, BTreeMap, BTreeSet};
 	use parking_lot::Mutex;
-	use parity_crypto::publickey::{Address, Public};
+	use parity_crypto::publickey::Address;
 	use crate::key_server_cluster::{Error, NodeId, SessionId, SessionMeta};
 	use super::{JobPartialResponseAction, JobPartialRequestAction, JobExecutor, JobTransport, JobSession, JobSessionState};
 

@@ -16,23 +16,17 @@
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use futures::{future::{err, result}, Future};
 use futures03::{
 	compat::Future01CompatExt,
 	future::{ready, FutureExt},
 };
 use parking_lot::Mutex;
-use parity_crypto::DEFAULT_MAC;
 use parity_crypto::publickey::public_to_address;
 use parity_secretstore_primitives::acl_storage::AclStorage;
-use parity_secretstore_primitives::key_server_set::KeyServerSet;
 use parity_secretstore_primitives::key_storage::KeyStorage;
-use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
-use crate::key_server_cluster::{math, ClusterSession, WaitableSession};
-use crate::traits::{AdminSessionsServer, ServerKeyGenerator, DocumentKeyServer, MessageSigner, KeyServer};
-use crate::types::{Error, Public, RequestSignature, Requester, ServerKeyId, EncryptedDocumentKey, EncryptedDocumentKeyShadow,
-	ClusterConfiguration, MessageHash, EncryptedMessageSignature, NodeId};
-use crate::key_server_cluster::{ClusterClient, ClusterConfiguration as NetClusterConfiguration};
+use crate::key_server_cluster::math;
+use crate::types::{Error, Public, Requester, ServerKeyId};
+use crate::key_server_cluster::ClusterClient;
 
 /// Secret store key server implementation
 pub struct KeyServerImpl {

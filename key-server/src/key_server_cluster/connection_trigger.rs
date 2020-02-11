@@ -15,18 +15,13 @@
 // along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeSet, BTreeMap};
-use std::collections::btree_map::Entry;
-use std::net::SocketAddr;
 use std::sync::Arc;
-use log::trace;
 use ethereum_types::H256;
-use parity_crypto::publickey::{Address, Public};
-use parity_secretstore_primitives::key_server_set::{KeyServerSet, KeyServerSetSnapshot};
-use crate::network::Connection;
-use crate::key_server_cluster::cluster::{ClusterConfiguration, ServersSetChangeParams};
+use parity_crypto::publickey::Address;
+use parity_secretstore_primitives::key_server_set::KeyServerSet;
+use crate::key_server_cluster::cluster::ServersSetChangeParams;
 use crate::key_server_cluster::cluster_sessions::AdminSession;
 use crate::types::{Error, NodeId};
-use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Describes which maintain() call is required.
@@ -68,8 +63,6 @@ pub trait ServersSetChangeSessionCreatorConnector: Send + Sync {
 pub struct SimpleConnectionTrigger<NetworkAddress> {
 	/// Key server set cluster.
 	key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>,
-	/// Trigger connections.
-	connections: TriggerConnections,
 	/// Servers set change session creator connector.
 	connector: Arc<dyn ServersSetChangeSessionCreatorConnector>,
 }
@@ -90,20 +83,11 @@ pub enum ConnectionsAction {
 	ConnectToMigrationSet,
 }
 
-/// Trigger connections.
-pub struct TriggerConnections {
-	/// This node key pair.
-	pub self_key_pair: Arc<dyn KeyServerKeyPair>,
-}
-
 impl<NetworkAddress> SimpleConnectionTrigger<NetworkAddress> {
 	/// Create new simple connection trigger.
-	pub fn new(key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>, self_key_pair: Arc<dyn KeyServerKeyPair>, admin_address: Option<Address>) -> Self {
+	pub fn new(key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>, admin_address: Option<Address>) -> Self {
 		SimpleConnectionTrigger {
 			key_server_set: key_server_set,
-			connections: TriggerConnections {
-				self_key_pair: self_key_pair,
-			},
 			connector: Arc::new(SimpleServersSetChangeSessionCreatorConnector {
 				admin_address: admin_address,
 			}),
@@ -206,13 +190,9 @@ impl TriggerConnections {
 
 #[cfg(test)]
 mod tests {
-	use std::collections::BTreeSet;
 	use std::sync::Arc;
-	use parity_crypto::publickey::{Random, Generator};
-	use parity_secretstore_primitives::key_server_set::{InMemoryKeyServerSet, KeyServerSetSnapshot, KeyServerSetMigration};
-	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
-	use crate::key_server_cluster::math;
-	use super::{Maintain, TriggerConnections, ConnectionsAction, ConnectionTrigger, SimpleConnectionTrigger,
+	use parity_secretstore_primitives::key_server_set::InMemoryKeyServerSet;
+	use super::{Maintain, ConnectionTrigger, SimpleConnectionTrigger,
 		/*select_nodes_to_disconnect, adjust_connections*/};
 
 /*	fn default_connection_data() -> NetConnectionsContainer {
@@ -223,11 +203,6 @@ mod tests {
 		}
 	}*/
 
-	fn create_connections() -> TriggerConnections {
-		TriggerConnections {
-			self_key_pair: Arc::new(InMemoryKeyServerKeyPair::new(Random.generate().unwrap())),
-		}
-	}
 /*
 	#[test]
 	fn do_not_disconnect_if_set_is_not_changed() {
@@ -379,8 +354,7 @@ mod tests {
 	#[test]
 	fn simple_connections_trigger_only_maintains_connections() {
 		let key_server_set = Arc::new(InMemoryKeyServerSet::new(false, Default::default()));
-		let self_key_pair = Arc::new(InMemoryKeyServerKeyPair::new(Random.generate().unwrap()));
-		let mut trigger = SimpleConnectionTrigger::new(key_server_set, self_key_pair, None);
+		let mut trigger = SimpleConnectionTrigger::new(key_server_set, None);
 		assert_eq!(trigger.on_maintain(), Some(Maintain::Connections));
 	}
 }

@@ -16,9 +16,9 @@
 
 use std::sync::Arc;
 use parity_bytes::Bytes;
-use ethereum_types::{H256, Address, Public};
+use ethereum_types::{H256, Address};
 use ethabi::RawLog;
-use parity_crypto::publickey::{Signature, Error as EthKeyError};
+use parity_crypto::publickey::Error as EthKeyError;
 
 /// Type for block number.
 /// Duplicated from ethcore types

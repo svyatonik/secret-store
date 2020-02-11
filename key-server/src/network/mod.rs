@@ -1,5 +1,5 @@
 use std::{
-	collections::{BTreeMap, BTreeSet},
+	collections::BTreeSet,
 	sync::Arc,
 };
 use parity_secretstore_primitives::{error::Error, KeyServerId};

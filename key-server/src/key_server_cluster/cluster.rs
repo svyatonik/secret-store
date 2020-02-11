@@ -15,8 +15,7 @@
 // along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::Arc;
-use std::collections::{BTreeMap, BTreeSet};
-use parking_lot::RwLock;
+use std::collections::BTreeSet;
 use parity_crypto::publickey::{Public, Signature, Random, Generator};
 use ethereum_types::{Address, H256};
 use log::trace;
@@ -25,13 +24,12 @@ use parity_secretstore_primitives::key_server_set::KeyServerSet;
 use parity_secretstore_primitives::key_storage::KeyStorage;
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::network::{ConnectionProvider, ConnectionManager};
-use crate::key_server_cluster::io::serialize_message;
 use crate::key_server_cluster::{Error, NodeId, SessionId, Requester};
 use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, AdminSession, ClusterSessions,
 	SessionIdWithSubSession, ClusterSessionsContainer, SERVERS_SET_CHANGE_SESSION_ID, create_cluster_view,
 	AdminSessionCreationData, ClusterSessionsListener};
 use crate::key_server_cluster::cluster_sessions_creator::ClusterSessionCreator;
-use crate::key_server_cluster::cluster_message_processor::{MessageProcessor, SessionsMessageProcessor};
+use crate::key_server_cluster::cluster_message_processor::MessageProcessor;
 use crate::key_server_cluster::message::Message;
 use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSession};
 use crate::key_server_cluster::decryption_session::{SessionImpl as DecryptionSession};
@@ -40,12 +38,10 @@ use crate::key_server_cluster::signing_session_ecdsa::{SessionImpl as EcdsaSigni
 use crate::key_server_cluster::signing_session_schnorr::{SessionImpl as SchnorrSigningSession};
 use crate::key_server_cluster::key_version_negotiation_session::{SessionImpl as KeyVersionNegotiationSession,
 	IsolatedSessionTransport as KeyVersionNegotiationSessionTransport, ContinueAction};
-use crate::key_server_cluster::connection_trigger::{ConnectionTrigger,
-	SimpleConnectionTrigger, ServersSetChangeSessionCreatorConnector};
-use crate::key_server_cluster::connection_trigger_with_migration::ConnectionTriggerWithMigration;
+use crate::key_server_cluster::connection_trigger::ServersSetChangeSessionCreatorConnector;
 
 #[cfg(test)]
-use crate::key_server_cluster::cluster_connections::tests::{MessagesQueue, TestConnections, TestConnectionsManager, new_test_connections};
+use crate::key_server_cluster::cluster_connections::tests::{MessagesQueue, TestConnectionsManager, new_test_connections};
 
 /// Cluster interface for external clients.
 pub trait ClusterClient: Send + Sync {
@@ -203,85 +199,22 @@ pub struct ClusterData<C: ConnectionManager + ?Sized> {
 	pub servers_set_change_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>,
 }
 
-/*pub fn new_cluster_client<C: ConnectionManager + ?Sized, NetworkAddress: Send + Sync + Clone + 'static>(
-	config: ClusterConfiguration<NetworkAddress>,
-	connection_manager: Arc<C>,
-	connection_provider: Arc<dyn ConnectionProvider>,
-) -> Result<Arc<ClusterCore<C>>, Error> {
-	let connection_trigger: Box<dyn ConnectionTrigger<NetworkAddress>> = match config.auto_migrate_enabled {
-		false => Box::new(SimpleConnectionTrigger::with_config(&config)),
-		true if config.admin_address.is_none() => Box::new(ConnectionTriggerWithMigration::with_config(&config)),
-		true => return Err(Error::Internal(
-			"secret store admininstrator address key is specified with auto-migration enabled".into()
-		)),
-	};
-
-	let servers_set_change_creator_connector = connection_trigger.servers_set_change_creator_connector();
-	let sessions = Arc::new(ClusterSessions::new(&config, servers_set_change_creator_connector.clone()));
-
-	let message_processor = Arc::new(SessionsMessageProcessor::new(
-		config.self_key_pair.clone(),
-		servers_set_change_creator_connector.clone(),
-		sessions.clone(),
-		connection_provider,
-	));
-
-	ClusterCore::new(sessions, message_processor, connection_manager, servers_set_change_creator_connector, config)
-}*/
-
-/*/// Create new network-backed cluster.
-pub fn new_network_cluster(
-	executor: Executor,
-	config: ClusterConfiguration,
-	net_config: NetConnectionsManagerConfig
-) -> Result<Arc<ClusterCore<NetConnectionsManager>>, Error> {
-	let mut nodes = config.key_server_set.snapshot().current_set;
-	let is_isolated = nodes.remove(&config.self_key_pair.address()).is_none();
-	let connections_data = Arc::new(RwLock::new(NetConnectionsContainer {
-		is_isolated,
-		nodes,
-		connections: BTreeMap::new(),
-	}));
-
-	let connection_trigger: Box<dyn ConnectionTrigger> = match net_config.auto_migrate_enabled {
-		false => Box::new(SimpleConnectionTrigger::with_config(&config)),
-		true if config.admin_address.is_none() => Box::new(ConnectionTriggerWithMigration::with_config(&config)),
-		true => return Err(Error::Internal(
-			"secret store admininstrator address key is specified with auto-migration enabled".into()
-		)),
-	};
-
-	let servers_set_change_creator_connector = connection_trigger.servers_set_change_creator_connector();
-	let sessions = Arc::new(ClusterSessions::new(&config, servers_set_change_creator_connector.clone()));
-	let message_processor = Arc::new(SessionsMessageProcessor::new(
-		config.self_key_pair.clone(),
-		servers_set_change_creator_connector.clone(),
-		sessions.clone(),
-		connections_data.clone()));
-
-	let connections = NetConnectionsManager::new(
-		executor,
-		message_processor.clone(),
-		connection_trigger,
-		connections_data,
-		&config,
-		net_config)?;
-	connections.start()?;
-
-	ClusterCore::new(sessions, message_processor, connections, servers_set_change_creator_connector, config)
-}*/
-
 /// Create new in-memory backed cluster
 #[cfg(test)]
 pub fn new_test_cluster(
 	messages: MessagesQueue,
 	config: ClusterConfiguration<std::net::SocketAddr>,
 ) -> Result<Arc<ClusterCore<TestConnectionsManager>>, Error> {
+	use crate::key_server_cluster::{
+		cluster_message_processor::SessionsMessageProcessor,
+		connection_trigger::{ConnectionTrigger, SimpleConnectionTrigger},
+	};
+
 	let nodes = config.key_server_set.snapshot().current_set;
 	let connections = Arc::new(new_test_connections(messages, config.self_key_pair.address(), nodes.keys().cloned().collect()));
 	let connections_manager = connections.manager();
 
-	let connection_trigger = Box::new(SimpleConnectionTrigger::new(config.key_server_set.clone(), config.self_key_pair.clone(), config.admin_address));
+	let connection_trigger = Box::new(SimpleConnectionTrigger::new(config.key_server_set.clone(), config.admin_address));
 	let servers_set_change_creator_connector = connection_trigger.servers_set_change_creator_connector();
 	let mut sessions = ClusterSessions::new(
 		config.self_key_pair.address(),
@@ -712,7 +645,7 @@ pub mod tests {
 	use crate::key_server_cluster::{NodeId, SessionId, Requester, Error};
 	use crate::key_server_cluster::message::Message;
 	use crate::key_server_cluster::cluster::{new_test_cluster, Cluster, ClusterCore, ClusterConfiguration, ClusterClient};
-	use crate::key_server_cluster::cluster_connections::tests::{MessagesQueue, TestConnections, TestConnectionsManager};
+	use crate::key_server_cluster::cluster_connections::tests::{MessagesQueue, TestConnectionsManager};
 	use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, ClusterSessions, AdminSession,
 		ClusterSessionsListener};
 	use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSession,

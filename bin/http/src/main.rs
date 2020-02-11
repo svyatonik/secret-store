@@ -15,7 +15,7 @@
 // along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::Arc;
-use futures::{FutureExt, TryFutureExt};
+use futures::FutureExt;
 use parity_crypto::publickey::KeyPair;
 use key_server::{ClusterConfiguration, KeyServerImpl, NodeAddress};
 use primitives::{

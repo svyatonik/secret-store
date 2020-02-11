@@ -24,11 +24,11 @@ use parking_lot::{Mutex, RwLock, Condvar};
 use ethereum_types::{Address, H256};
 use parity_crypto::publickey::Secret;
 use parity_secretstore_primitives::acl_storage::AclStorage;
-use parity_secretstore_primitives::key_storage::{KeyStorage, KeyShare};
+use parity_secretstore_primitives::key_storage::KeyStorage;
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::network::ConnectionProvider;
 use crate::key_server_cluster::{Error, NodeId, SessionId};
-use crate::key_server_cluster::cluster::{Cluster, ClusterConfiguration, ClusterView};
+use crate::key_server_cluster::cluster::{Cluster, ClusterView};
 use crate::key_server_cluster::connection_trigger::ServersSetChangeSessionCreatorConnector;
 use crate::key_server_cluster::message::{self, Message};
 use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSessionImpl};
@@ -684,11 +684,9 @@ mod tests {
 	use std::sync::atomic::{AtomicUsize, Ordering};
 	use parity_crypto::publickey::{Random, Generator};
 	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
-	use parity_secretstore_primitives::key_server_set::InMemoryKeyServerSet;
 	use parity_secretstore_primitives::key_storage::InMemoryKeyStorage;
 	use parity_secretstore_primitives::key_server_key_pair::{KeyServerKeyPair, InMemoryKeyServerKeyPair};
 	use crate::key_server_cluster::{Error, math};
-	use crate::key_server_cluster::cluster::ClusterConfiguration;
 	use crate::key_server_cluster::connection_trigger::SimpleServersSetChangeSessionCreatorConnector;
 	use crate::key_server_cluster::cluster::tests::DummyCluster;
 	use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSession};
@@ -701,7 +699,6 @@ mod tests {
 		let admin_address = Some(math::generate_random_address().unwrap());
 		let key_storage = Arc::new(InMemoryKeyStorage::default());
 		let acl_storage = Arc::new(InMemoryPermissiveAclStorage::default());
-		let key_server_set = Arc::new(InMemoryKeyServerSet::new(false, vec![(key_pair.address(), format!("127.0.0.1:{}", 100).parse().unwrap())].into_iter().collect()));
 		ClusterSessions::new(
 			self_key_pair.address(),
 			admin_address,

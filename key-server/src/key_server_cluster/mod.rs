@@ -16,7 +16,7 @@
 
 use super::types::ServerKeyId;
 
-pub use super::types::{Error, NodeId, NodePublic, Requester, EncryptedDocumentKeyShadow};
+pub use super::types::{Error, NodeId, Requester, EncryptedDocumentKeyShadow};
 pub use super::serialization::{SerializableSignature, SerializableH256, SerializableSecret, SerializablePublic,
 	SerializableRequester, SerializableMessageHash, SerializableAddress};
 pub use self::cluster::{ClusterCore, ClusterConfiguration, ClusterClient/*, new_cluster_client*/};

@@ -21,7 +21,6 @@ mod traits;
 mod key_server;
 mod serialization;
 mod blockchain;
-mod migration;
 pub mod network;
 
 use std::sync::Arc;
@@ -94,7 +93,6 @@ impl Builder {
 		let connection_trigger: Box<dyn crate::key_server_cluster::connection_trigger::ConnectionTrigger<std::net::SocketAddr>> = match config.auto_migrate_enabled {
 			false => Box::new(crate::key_server_cluster::connection_trigger::SimpleConnectionTrigger::new(
 				key_server_set.clone(),
-				self_key_pair.clone(),
 				config.admin_address,
 			)),
 			true if config.admin_address.is_none() => Box::new(crate::key_server_cluster::connection_trigger_with_migration::ConnectionTriggerWithMigration::new(
@@ -151,28 +149,7 @@ impl Builder {
 				self_key_pair: self_key_pair.clone(),
 			},
 		)?;
-		/*let cluster = crate::key_server_cluster::new_cluster_client(
-			crate::key_server_cluster::cluster::ClusterConfiguration {
-				acl_storage: acl_storage.clone(),
-				admin_address: config.admin_address,
-				auto_migrate_enabled: true,
-				key_server_set: key_server_set.clone(),
-				key_storage: key_storage.clone(),
-				preserve_sessions: false,
-				self_key_pair: self_key_pair.clone(),
-			},
-			connection_manager,
-			connection_provider,
-		)?;*/
-/*			executor,
-			message_processor,
-			connection_trigger,
-			crate::network::tcp::NetConnectionsContainer::new(is_isolated, nodes),
-			tcp_config,
-			NetConnectionsManagerConfig {
-
-			},
-		);*/
+		cluster.run()?;
 
 		key_server::KeyServerImpl::new(
 			cluster.client(),
@@ -181,13 +158,3 @@ impl Builder {
 		).map(|key_server| Arc::new(key_server))
 	}
 }
-
-/*
-
-Network deps: MessageProcessor + ConnectionTrigger
-MessageProcessor deps:
-	ServersSetChangeSessionCreatorConnector
-	ClusterSessions
-	ConnectionProvider
-
-*/

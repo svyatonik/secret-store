@@ -62,11 +62,9 @@ pub trait ConnectionProvider: Send + Sync {
 pub mod tests {
 	use std::collections::{BTreeSet, VecDeque};
 	use std::sync::Arc;
-	use std::sync::atomic::{AtomicBool, Ordering};
 	use parking_lot::Mutex;
 	use crate::key_server_cluster::{Error, NodeId};
 	use crate::key_server_cluster::message::Message;
-	use crate::key_server_cluster::io::{deserialize_message, deserialize_header};
 	use crate::network::{ConnectionProvider, ConnectionManager, Connection};
 
 	/// Shared messages queue.

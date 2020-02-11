@@ -34,11 +34,11 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::timer::{Interval, timeout::Error as TimeoutError};
 use tokio_io::IoFuture;
 use parity_crypto::publickey::KeyPair;
-use log::{error, trace, warn};
+use log::{trace, warn};
 use parity_secretstore_primitives::executor::TokioHandle;
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::network::{ConnectionProvider, ConnectionManager, Connection};
-use crate::key_server_cluster::{Error, NodeId, ClusterConfiguration};
+use crate::key_server_cluster::{Error, NodeId};
 use crate::key_server_cluster::connection_trigger::{Maintain, ConnectionTrigger};
 use crate::key_server_cluster::cluster_message_processor::MessageProcessor;
 use crate::key_server_cluster::io::{DeadlineStatus, ReadMessage, SharedTcpStream,

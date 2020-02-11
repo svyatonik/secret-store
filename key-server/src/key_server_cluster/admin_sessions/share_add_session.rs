@@ -890,7 +890,7 @@ impl SessionTransport for IsolatedSessionTransport {
 #[cfg(test)]
 pub mod tests {
 	use std::collections::BTreeSet;
-	use parity_crypto::publickey::{Address, Random, Generator, Public};
+	use parity_crypto::publickey::{Address, Random, Generator};
 	use parity_secretstore_primitives::key_storage::KeyStorage;
 	use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 	use crate::key_server_cluster::{NodeId, Error};

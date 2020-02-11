@@ -15,7 +15,7 @@
 // along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeSet, BTreeMap};
-use parity_crypto::publickey::{Address, Public, Signature, verify_address};
+use parity_crypto::publickey::{Address, Signature, verify_address};
 use tiny_keccak::Keccak;
 use crate::key_server_cluster::{Error, NodeId, SessionId};
 use crate::key_server_cluster::message::{InitializeConsensusSessionWithServersSet, InitializeConsensusSessionOfShareAdd};

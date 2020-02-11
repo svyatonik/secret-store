@@ -14,23 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeMap;
-
-use crate::blockchain::ContractAddress;
 use parity_crypto::publickey::Address;
 
 /// Node id.
 pub type NodeId = parity_secretstore_primitives::KeyServerId;
-///
-pub type NodePublic = parity_secretstore_primitives::KeyServerPublic;
 /// Server key id. When key is used to encrypt document, it could be document contents hash.
 pub type ServerKeyId = ethereum_types::H256;
 /// Encrypted document key type.
 pub type EncryptedDocumentKey = parity_bytes::Bytes;
-/// Message hash.
-pub type MessageHash = ethereum_types::H256;
-/// Message signature.
-pub type EncryptedMessageSignature = parity_bytes::Bytes;
 /// Request signature type.
 pub type RequestSignature = parity_crypto::publickey::Signature;
 /// Public key type.
