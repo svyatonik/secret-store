@@ -21,9 +21,9 @@ use std::time::Duration;
 use futures::{try_ready, Future, Poll};
 use tokio::net::TcpStream;
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
-use crate::key_server_cluster::Error;
+use parity_secretstore_primitives::error::Error;
 use crate::key_server_cluster::io::{accept_handshake, Handshake, Deadline, deadline};
-use crate::key_server_cluster::net::Connection;
+use crate::network::tcp::connection::Connection;
 
 /// Create future for accepting incoming connection.
 pub fn accept_connection(stream: TcpStream, self_key_pair: Arc<dyn KeyServerKeyPair>) -> Deadline<AcceptConnection> {

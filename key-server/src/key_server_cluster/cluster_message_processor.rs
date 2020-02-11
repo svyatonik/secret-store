@@ -17,11 +17,11 @@
 use std::sync::Arc;
 use log::{info, trace, warn};
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
+use crate::network::{ConnectionProvider, Connection};
 use crate::key_server_cluster::io::serialize_message;
 use crate::key_server_cluster::{Error, NodeId};
 use crate::key_server_cluster::cluster::{ServersSetChangeParams, new_servers_set_change_session};
 use crate::key_server_cluster::cluster_sessions::{AdminSession};
-use crate::key_server_cluster::cluster_connections::{ConnectionProvider, Connection};
 use crate::key_server_cluster::cluster_sessions::{ClusterSession, ClusterSessions, ClusterSessionsContainer,
 	create_cluster_view};
 use crate::key_server_cluster::cluster_sessions_creator::{ClusterSessionCreator, IntoSessionId};
@@ -103,10 +103,7 @@ impl SessionsMessageProcessor {
 					let session_nonce = message.session_nonce().expect(qed);
 					let message = SC::make_error_message(session_id, session_nonce, error);
 
-					match serialize_message(message) {
-						Ok(message) => connection.send_message(message.into()),
-						Err(_) => unimplemented!("TODO"),
-					}
+					connection.send_message(message);
 				}
 				return None;
 			},
@@ -211,10 +208,8 @@ impl SessionsMessageProcessor {
 				let msg = Message::Cluster(ClusterMessage::KeepAliveResponse(message::KeepAliveResponse {
 					session_id: None,
 				}));
-				match serialize_message(msg) {
-					Ok(msg) => connection.send_message(msg.into()),
-					Err(error) => unimplemented!("TODO"),
-				}
+
+				connection.send_message(msg);
 			},
 			ClusterMessage::KeepAliveResponse(msg) => if let Some(session_id) = msg.session_id {
 				self.sessions.on_session_keep_alive(connection.node_id(), session_id.into());

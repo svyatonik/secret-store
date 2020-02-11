@@ -14,8 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Parity.  If not, see <http://www.gnu.org/licenses/>.
 
-pub use parity_secretstore_primitives::connections::*;
-
 /*use std::collections::BTreeSet;
 use std::sync::Arc;
 use crate::key_server_cluster::{Error, NodeId};
@@ -68,8 +66,8 @@ pub mod tests {
 	use parking_lot::Mutex;
 	use crate::key_server_cluster::{Error, NodeId};
 	use crate::key_server_cluster::message::Message;
-	use super::{ConnectionManager, Connection, ConnectionProvider};
 	use crate::key_server_cluster::io::{deserialize_message, deserialize_header};
+	use crate::network::{ConnectionProvider, ConnectionManager, Connection};
 
 	/// Shared messages queue.
 	pub type MessagesQueue = Arc<Mutex<VecDeque<(NodeId, NodeId, Message)>>>;
@@ -127,7 +125,7 @@ pub mod tests {
 		}
 	}
 
-	impl parity_secretstore_primitives::connections::ConnectionManager for TestConnectionsManager {
+	impl ConnectionManager for TestConnectionsManager {
 		fn provider(&self) -> Arc<dyn ConnectionProvider> {
 			Arc::new(TestConnections { core: self.core.clone() })
 		}
@@ -174,9 +172,7 @@ pub mod tests {
 			format!("{}", self.to)
 		}
 
-		fn send_message(&self, message: Vec<u8>) {
-			let header = deserialize_header(&message).unwrap();
-			let message = deserialize_message(&header, message[18..].to_vec()).unwrap();
+		fn send_message(&self, message: Message) {
 			self.messages.lock().push_back((self.from, self.to, message))
 		}
 	}

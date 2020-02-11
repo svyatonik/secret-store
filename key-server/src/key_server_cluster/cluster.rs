@@ -25,13 +25,13 @@ use parity_secretstore_primitives::acl_storage::AclStorage;
 use parity_secretstore_primitives::key_server_set::KeyServerSet;
 use parity_secretstore_primitives::key_storage::KeyStorage;
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
+use crate::network::{ConnectionProvider, ConnectionManager};
 use crate::key_server_cluster::io::serialize_message;
 use crate::key_server_cluster::{Error, NodeId, SessionId, Requester};
 use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, AdminSession, ClusterSessions,
 	SessionIdWithSubSession, ClusterSessionsContainer, SERVERS_SET_CHANGE_SESSION_ID, create_cluster_view,
 	AdminSessionCreationData, ClusterSessionsListener};
 use crate::key_server_cluster::cluster_sessions_creator::ClusterSessionCreator;
-use crate::key_server_cluster::cluster_connections::{ConnectionProvider, ConnectionManager};
 use crate::key_server_cluster::cluster_message_processor::{MessageProcessor, SessionsMessageProcessor};
 use crate::key_server_cluster::message::Message;
 use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSession};
@@ -209,7 +209,7 @@ pub fn new_cluster_client<C: ConnectionManager + ?Sized, NetworkAddress: Send + 
 	connection_manager: Arc<C>,
 	connection_provider: Arc<dyn ConnectionProvider>,
 ) -> Result<Arc<ClusterCore<C>>, Error> {
-	let connection_trigger: Box<dyn ConnectionTrigger> = match config.auto_migrate_enabled {
+	let connection_trigger: Box<dyn ConnectionTrigger<NetworkAddress>> = match config.auto_migrate_enabled {
 		false => Box::new(SimpleConnectionTrigger::with_config(&config)),
 		true if config.admin_address.is_none() => Box::new(ConnectionTriggerWithMigration::with_config(&config)),
 		true => return Err(Error::Internal(
@@ -369,10 +369,8 @@ impl ClusterView {
 
 impl Cluster for ClusterView {
 	fn broadcast(&self, message: Message) -> Result<(), Error> {
-		let smessage = format!("{}", message);
-		let message: Vec<u8> = serialize_message(message)?.into();
 		for node in self.connected_nodes.iter().filter(|n| **n != self.self_key_pair.address()) {
-			trace!(target: "secretstore_net", "{}: sent message {} to {}", self.self_key_pair.address(), smessage, node);
+			trace!(target: "secretstore_net", "{}: sent message {} to {}", self.self_key_pair.address(), message, node);
 			let connection = self.connections.connection(node).ok_or(Error::NodeDisconnected)?;
 			connection.send_message(message.clone());
 		}
@@ -382,7 +380,7 @@ impl Cluster for ClusterView {
 	fn send(&self, to: &NodeId, message: Message) -> Result<(), Error> {
 		trace!(target: "secretstore_net", "{}: sent message {} to {}", self.self_key_pair.address(), message, to);
 		let connection = self.connections.connection(to).ok_or(Error::NodeDisconnected)?;
-		connection.send_message(serialize_message(message)?.into());
+		connection.send_message(message);
 		Ok(())
 	}
 
@@ -705,10 +703,10 @@ pub mod tests {
 	use parity_secretstore_primitives::key_storage::InMemoryKeyStorage;
 	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
 	use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
+	use crate::network::ConnectionManager;
 	use crate::key_server_cluster::{NodeId, SessionId, Requester, Error};
 	use crate::key_server_cluster::message::Message;
 	use crate::key_server_cluster::cluster::{new_test_cluster, Cluster, ClusterCore, ClusterConfiguration, ClusterClient};
-	use crate::key_server_cluster::cluster_connections::ConnectionManager;
 	use crate::key_server_cluster::cluster_connections::tests::{MessagesQueue, TestConnections, TestConnectionsManager};
 	use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, ClusterSessions, AdminSession,
 		ClusterSessionsListener};

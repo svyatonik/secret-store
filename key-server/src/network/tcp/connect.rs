@@ -24,7 +24,7 @@ use tokio::net::{TcpStream, tcp::ConnectFuture};
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::key_server_cluster::{Error, NodeId};
 use crate::key_server_cluster::io::{handshake, Handshake, Deadline, deadline};
-use crate::key_server_cluster::net::Connection;
+use crate::network::tcp::connection::Connection;
 
 /// Create future for connecting to other node.
 pub fn connect(address: &SocketAddr, self_key_pair: Arc<dyn KeyServerKeyPair>, trusted_nodes: BTreeSet<NodeId>) -> Deadline<Connect> {

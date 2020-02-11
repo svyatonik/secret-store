@@ -22,9 +22,9 @@ use log::trace;
 use ethereum_types::H256;
 use parity_crypto::publickey::{Address, Public};
 use parity_secretstore_primitives::key_server_set::{KeyServerSet, KeyServerSetSnapshot};
+use crate::network::Connection;
 use crate::key_server_cluster::cluster::{ClusterConfiguration, ServersSetChangeParams};
 use crate::key_server_cluster::cluster_sessions::AdminSession;
-use crate::key_server_cluster::cluster_connections::{Connection};
 use crate::types::{Error, NodeId};
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 
@@ -40,7 +40,7 @@ pub enum Maintain {
 }
 
 /// Connection trigger, which executes necessary actions when set of key servers changes.
-pub trait ConnectionTrigger: Send + Sync {
+pub trait ConnectionTrigger<NetworkAddress>: Send + Sync {
 	/// On maintain interval.
 	fn on_maintain(&mut self) -> Option<Maintain>;
 	/// When connection is established.
@@ -50,7 +50,7 @@ pub trait ConnectionTrigger: Send + Sync {
 	/// Maintain active sessions. Returns Some if servers set session creation required.
 	fn maintain_session(&mut self) -> Option<ServersSetChangeParams>;
 	/// Maintain active connections.
-	fn maintain_connections(&mut self/*, connections: &mut NetConnectionsContainer*/);
+	fn maintain_connections(&mut self) -> Option<BTreeMap<NodeId, NetworkAddress>>;
 	/// Return connector for the servers set change session creator.
 	fn servers_set_change_creator_connector(&self) -> Arc<dyn ServersSetChangeSessionCreatorConnector>;
 }
@@ -116,7 +116,7 @@ impl<NetworkAddress> SimpleConnectionTrigger<NetworkAddress> {
 	}
 }
 
-impl<NetworkAddress: Send + Sync> ConnectionTrigger for SimpleConnectionTrigger<NetworkAddress> {
+impl<NetworkAddress: Clone + Send + Sync> ConnectionTrigger<NetworkAddress> for SimpleConnectionTrigger<NetworkAddress> {
 	fn on_maintain(&mut self) -> Option<Maintain> {
 		Some(Maintain::Connections)
 	}
@@ -135,9 +135,8 @@ impl<NetworkAddress: Send + Sync> ConnectionTrigger for SimpleConnectionTrigger<
 		None
 	}
 
-	fn maintain_connections(&mut self/*, connections: &mut NetConnectionsContainer*/) {
-		unimplemented!()
-		/*self.connections.maintain(ConnectionsAction::ConnectToCurrentSet, connections, &self.key_server_set.snapshot())*/
+	fn maintain_connections(&mut self) -> Option<BTreeMap<NodeId, NetworkAddress>> {
+		Some(self.key_server_set.snapshot().current_set.clone())
 	}
 
 	fn servers_set_change_creator_connector(&self) -> Arc<dyn ServersSetChangeSessionCreatorConnector> {
@@ -153,28 +152,34 @@ impl ServersSetChangeSessionCreatorConnector for SimpleServersSetChangeSessionCr
 	fn set_key_servers_set_change_session(&self, _session: Arc<AdminSession>) {
 	}
 }
-
+/*
 impl TriggerConnections {
-	pub fn maintain(&self, action: ConnectionsAction/*, data: &mut NetConnectionsContainer*/, server_set: &KeyServerSetSnapshot<SocketAddr>) {
-		/*match action {
+	pub fn maintain(
+		&self,
+		action: ConnectionsAction,
+		data: &mut ConnectionsContainer,
+		server_set: &KeyServerSetSnapshot<Address>,
+	) {
+		match action {
 			ConnectionsAction::ConnectToCurrentSet => {
-				adjust_connections(&self.self_key_pair.address(), data, &server_set.current_set);
+//				adjust_connections(&self.self_key_pair.address(), data, &server_set.current_set);
+				data.set_servers_set(server_set.current_set.clone());
 			},
 			ConnectionsAction::ConnectToMigrationSet => {
 				let migration_set = server_set.migration.as_ref().map(|s| s.set.clone()).unwrap_or_default();
-				adjust_connections(&self.self_key_pair.address(), data, &migration_set);
+				data.set_servers_set(migration_set);
+				//adjust_connections(&self.self_key_pair.address(), data, &migration_set);
 			},
-		}*/
-		unimplemented!("TODO")
+		}
 	}
 }
-
-fn adjust_connections(
+*/
+/*fn adjust_connections(
 	self_node_id: &NodeId,
-	/*data: &mut NetConnectionsContainer,*/
-	required_set: &BTreeMap<NodeId, SocketAddr>
+	data: &mut ConnectionsContainer,
+	required_set: &BTreeMap<NodeId, Address>
 ) {
-	/*if !required_set.contains_key(self_node_id) {
+	if !required_set.contains_key(self_node_id) {
 		if !data.is_isolated {
 			trace!(target: "secretstore_net", "{}: isolated from cluser", self_node_id);
 		}
@@ -200,19 +205,9 @@ fn adjust_connections(
 		if node_to_connect != self_node_id {
 			data.nodes.insert(node_to_connect.clone(), node_addr.clone());
 		}
-	}*/
+	}
 	unimplemented!()
-}
-
-fn select_nodes_to_disconnect(current_set: &BTreeMap<NodeId, SocketAddr>, new_set: &BTreeMap<NodeId, SocketAddr>) -> Vec<NodeId> {
-	current_set.iter()
-		.filter(|&(node_id, node_addr)| match new_set.get(node_id) {
-			Some(new_node_addr) => node_addr != new_node_addr,
-			None => true,
-		})
-		.map(|(node_id, _)| node_id.clone())
-		.collect()
-}
+}*/
 
 #[cfg(test)]
 mod tests {
@@ -223,7 +218,7 @@ mod tests {
 	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
 	use crate::key_server_cluster::math;
 	use super::{Maintain, TriggerConnections, ConnectionsAction, ConnectionTrigger, SimpleConnectionTrigger,
-		select_nodes_to_disconnect, adjust_connections};
+		/*select_nodes_to_disconnect, adjust_connections*/};
 
 /*	fn default_connection_data() -> NetConnectionsContainer {
 		NetConnectionsContainer {

@@ -59,13 +59,12 @@ pub use self::client_sessions::signing_session_schnorr;
 
 mod cluster;
 mod cluster_connections;
-mod cluster_message_processor;
+pub mod cluster_message_processor;
 mod cluster_sessions;
 mod cluster_sessions_creator;
-mod connection_trigger;
+pub mod connection_trigger;
 mod connection_trigger_with_migration;
-mod io;
+pub mod io;
 mod jobs;
 pub mod math;
-mod message;
-mod net;
+pub mod message;

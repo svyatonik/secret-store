@@ -175,7 +175,7 @@ impl<NetworkAddress: Send + Sync + Clone> ConnectionTriggerWithMigration<Network
 	}
 }
 
-impl<NetworkAddress: Clone + Send + Sync + 'static> ConnectionTrigger for ConnectionTriggerWithMigration<NetworkAddress> {
+impl<NetworkAddress: Clone + Send + Sync + 'static> ConnectionTrigger<NetworkAddress> for ConnectionTriggerWithMigration<NetworkAddress> {
 	fn on_maintain(&mut self) -> Option<Maintain> {
 		self.snapshot = self.key_server_set.snapshot();
 		*self.session.connector.migration.lock() = self.snapshot.migration.clone();
@@ -197,11 +197,19 @@ impl<NetworkAddress: Clone + Send + Sync + 'static> ConnectionTrigger for Connec
 		self.session_action.and_then(|action| self.session.maintain(action, &self.snapshot))
 	}
 
-	fn maintain_connections(&mut self/*, connections: &mut NetConnectionsContainer*/) {
-		/*if let Some(action) = self.connections_action {
-			self.connections.maintain(action, connections, &self.snapshot);
-		}*/
-		unimplemented!()
+	fn maintain_connections(&mut self) -> Option<BTreeMap<NodeId, NetworkAddress>> {
+		self.connections_action
+			.map(|action| match action {
+				ConnectionsAction::ConnectToCurrentSet => {
+					self.snapshot.current_set.clone()
+	//				adjust_connections(&self.self_key_pair.address(), data, &server_set.current_set);
+	//				data.set_servers_set(server_set.current_set.clone());
+				},
+				ConnectionsAction::ConnectToMigrationSet => {
+					self.snapshot.migration.as_ref().map(|s| s.set.clone()).unwrap_or_default()
+					//adjust_connections(&self.self_key_pair.address(), data, &migration_set);
+				},
+			})
 	}
 
 	fn servers_set_change_creator_connector(&self) -> Arc<dyn ServersSetChangeSessionCreatorConnector> {
