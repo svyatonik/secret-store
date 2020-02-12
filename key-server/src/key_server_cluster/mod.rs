@@ -58,7 +58,6 @@ pub use self::client_sessions::signing_session_ecdsa;
 pub use self::client_sessions::signing_session_schnorr;
 
 pub mod cluster;
-mod cluster_connections;
 pub mod cluster_message_processor;
 pub mod cluster_sessions;
 mod cluster_sessions_creator;

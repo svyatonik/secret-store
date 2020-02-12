@@ -40,9 +40,6 @@ use crate::key_server_cluster::key_version_negotiation_session::{SessionImpl as 
 	IsolatedSessionTransport as KeyVersionNegotiationSessionTransport, ContinueAction};
 use crate::key_server_cluster::connection_trigger::ServersSetChangeSessionCreatorConnector;
 
-#[cfg(test)]
-use crate::key_server_cluster::cluster_connections::tests::{MessagesQueue, TestConnectionsManager, new_test_connections};
-
 /// Cluster interface for external clients.
 pub trait ClusterClient: Send + Sync {
 	/// Start new generation session.
@@ -197,45 +194,6 @@ pub struct ClusterData<C: ConnectionManager + ?Sized> {
 	pub message_processor: Arc<dyn MessageProcessor>,
 	/// Link between servers set chnage session and the connections manager.
 	pub servers_set_change_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>,
-}
-
-/// Create new in-memory backed cluster
-#[cfg(test)]
-pub fn new_test_cluster(
-	messages: MessagesQueue,
-	config: ClusterConfiguration<std::net::SocketAddr>,
-) -> Result<Arc<ClusterCore<TestConnectionsManager>>, Error> {
-	use crate::key_server_cluster::{
-		cluster_message_processor::SessionsMessageProcessor,
-		connection_trigger::{ConnectionTrigger, SimpleConnectionTrigger},
-	};
-
-	let nodes = config.key_server_set.snapshot().current_set;
-	let connections = Arc::new(new_test_connections(messages, config.self_key_pair.address(), nodes.keys().cloned().collect()));
-	let connections_manager = connections.manager();
-
-	let connection_trigger = Box::new(SimpleConnectionTrigger::new(config.key_server_set.clone(), config.admin_address));
-	let servers_set_change_creator_connector = connection_trigger.servers_set_change_creator_connector();
-	let mut sessions = ClusterSessions::new(
-		config.self_key_pair.address(),
-		config.admin_address,
-		config.key_storage.clone(),
-		config.acl_storage.clone(),
-		servers_set_change_creator_connector.clone(),
-	);
-	if config.preserve_sessions {
-		sessions.preserve_sessions();
-	}
-	let sessions = Arc::new(sessions);
-
-	let message_processor = Arc::new(SessionsMessageProcessor::new(
-		config.self_key_pair.clone(),
-		servers_set_change_creator_connector.clone(),
-		sessions.clone(),
-		connections_manager.provider(),
-	));
-
-	ClusterCore::new(sessions, message_processor, connections_manager, servers_set_change_creator_connector, config)
 }
 
 impl<C: ConnectionManager + ?Sized> ClusterCore<C> {
@@ -642,10 +600,10 @@ pub mod tests {
 	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
 	use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 	use crate::network::ConnectionManager;
+	use crate::network::in_memory::{InMemoryMessagesQueue, InMemoryConnectionsManager, new_in_memory_connections};
 	use crate::key_server_cluster::{NodeId, SessionId, Requester, Error};
 	use crate::key_server_cluster::message::Message;
-	use crate::key_server_cluster::cluster::{new_test_cluster, Cluster, ClusterCore, ClusterConfiguration, ClusterClient};
-	use crate::key_server_cluster::cluster_connections::tests::{MessagesQueue, TestConnectionsManager};
+	use crate::key_server_cluster::cluster::{Cluster, ClusterCore, ClusterConfiguration, ClusterClient};
 	use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, ClusterSessions, AdminSession,
 		ClusterSessionsListener};
 	use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSession,
@@ -656,6 +614,45 @@ pub mod tests {
 	use crate::key_server_cluster::signing_session_schnorr::{SessionImpl as SchnorrSigningSession};
 	use crate::key_server_cluster::key_version_negotiation_session::{SessionImpl as KeyVersionNegotiationSession,
 		IsolatedSessionTransport as KeyVersionNegotiationSessionTransport};
+
+	/// Create new in-memory backed cluster
+	#[cfg(test)]
+	pub fn new_test_cluster(
+		messages: InMemoryMessagesQueue,
+		config: ClusterConfiguration<std::net::SocketAddr>,
+	) -> Result<Arc<ClusterCore<InMemoryConnectionsManager>>, Error> {
+		use crate::key_server_cluster::{
+			cluster_message_processor::SessionsMessageProcessor,
+			connection_trigger::{ConnectionTrigger, SimpleConnectionTrigger},
+		};
+
+		let nodes = config.key_server_set.snapshot().current_set;
+		let connections = Arc::new(new_in_memory_connections(messages, config.self_key_pair.address(), nodes.keys().cloned().collect()));
+		let connections_manager = connections.manager();
+
+		let connection_trigger = Box::new(SimpleConnectionTrigger::new(config.key_server_set.clone(), config.admin_address));
+		let servers_set_change_creator_connector = connection_trigger.servers_set_change_creator_connector();
+		let mut sessions = ClusterSessions::new(
+			config.self_key_pair.address(),
+			config.admin_address,
+			config.key_storage.clone(),
+			config.acl_storage.clone(),
+			servers_set_change_creator_connector.clone(),
+		);
+		if config.preserve_sessions {
+			sessions.preserve_sessions();
+		}
+		let sessions = Arc::new(sessions);
+
+		let message_processor = Arc::new(SessionsMessageProcessor::new(
+			config.self_key_pair.clone(),
+			servers_set_change_creator_connector.clone(),
+			sessions.clone(),
+			connections_manager.provider(),
+		));
+
+		ClusterCore::new(sessions, message_processor, connections_manager, servers_set_change_creator_connector, config)
+	}
 
 	#[derive(Default)]
 	pub struct DummyClusterClient {
@@ -816,12 +813,12 @@ pub mod tests {
 
 	/// Test message loop.
 	pub struct MessageLoop {
-		messages: MessagesQueue,
+		messages: InMemoryMessagesQueue,
 		preserve_sessions: bool,
 		key_pairs_map: BTreeMap<NodeId, Arc<InMemoryKeyServerKeyPair>>,
 		acl_storages_map: BTreeMap<NodeId, Arc<InMemoryPermissiveAclStorage>>,
 		key_storages_map: BTreeMap<NodeId, Arc<InMemoryKeyStorage>>,
-		clusters_map: BTreeMap<NodeId, Arc<ClusterCore<TestConnectionsManager>>>,
+		clusters_map: BTreeMap<NodeId, Arc<ClusterCore<InMemoryConnectionsManager>>>,
 	}
 
 	impl ::std::fmt::Debug for MessageLoop {
@@ -847,7 +844,7 @@ pub mod tests {
 		}
 
 		/// Get cluster reference by its index.
-		pub fn cluster(&self, idx: usize) -> &Arc<ClusterCore<TestConnectionsManager>> {
+		pub fn cluster(&self, idx: usize) -> &Arc<ClusterCore<InMemoryConnectionsManager>> {
 			self.clusters_map.values().nth(idx).unwrap()
 		}
 
