@@ -64,17 +64,6 @@ const KEEP_ALIVE_SEND_INTERVAL: Duration = Duration::from_secs(30);
 /// we must treat this node as non-responding && disconnect from it.
 const KEEP_ALIVE_DISCONNECT_INTERVAL: Duration = Duration::from_secs(60);
 
-/// Network connection manager configuration.
-pub struct NetConnectionsManagerConfig {
-	/// Allow connecting to 'higher' nodes.
-	pub allow_connecting_to_higher_nodes: bool,
-	/// Interface to listen to.
-	pub listen_address: (String, u16),
-	/// True if we should autostart key servers set change session when servers set changes?
-	/// This will only work when servers set is configured using KeyServerSet contract.
-	pub auto_migrate_enabled: bool,
-}
-
 /// Network connections manager.
 pub struct NetConnectionsManager {
 	/// Address we're listening for incoming connections.
@@ -142,14 +131,6 @@ pub struct NodeAddress {
 	pub port: u16,
 }
 
-///
-pub struct TcpConfiguration {
-	/// This node address.
-	pub listener_address: NodeAddress,
-	///
-	pub self_key_pair: Arc<dyn KeyServerKeyPair>,
-}
-
 impl NetConnectionsContainer {
 	pub fn new(
 		is_isolated: bool,
@@ -172,20 +153,22 @@ impl NetConnectionsManager {
 		message_processor: Arc<dyn MessageProcessor>,
 		trigger: Box<dyn ConnectionTrigger<SocketAddr>>,
 		container: Arc<NetConnectionsContainer>,
-		config: TcpConfiguration,
-		net_config: NetConnectionsManagerConfig,
+		listen_address: NodeAddress,
+		self_key_pair: Arc<dyn KeyServerKeyPair>,
+		allow_connecting_to_higher_nodes: bool,
 	) -> Result<Self, Error> {
 		let listen_address = make_socket_address(
-			&net_config.listen_address.0,
-			net_config.listen_address.1)?;
+			&listen_address.address,
+			listen_address.port,
+		)?;
 
 		Ok(NetConnectionsManager {
 			listen_address,
 			data: Arc::new(NetConnectionsData {
-				allow_connecting_to_higher_nodes: net_config.allow_connecting_to_higher_nodes,
+				allow_connecting_to_higher_nodes,
 				executor,
 				message_processor,
-				self_key_pair: config.self_key_pair.clone(),
+				self_key_pair,
 				trigger: Mutex::new(trigger),
 				container,
 			}),

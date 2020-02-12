@@ -39,11 +39,6 @@ pub struct NodeAddress {
 /// Key server cluster configuration
 #[derive(Debug)]
 pub struct ClusterConfiguration {
-	/// This node address.
-	pub listener_address: NodeAddress,
-	/// Allow outbound connections to 'higher' nodes.
-	/// This is useful for tests, but slower a bit for production.
-	pub allow_connecting_to_higher_nodes: bool,
 	/// Administrator public key.
 	pub admin_address: Option<Address>,
 	/// Should key servers set change session should be started when servers set changes.

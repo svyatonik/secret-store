@@ -17,7 +17,7 @@
 use std::sync::Arc;
 use futures::FutureExt;
 use parity_crypto::publickey::KeyPair;
-use key_server::{ClusterConfiguration, KeyServerImpl, NodeAddress};
+use key_server::{ClusterConfiguration, KeyServerImpl};
 use primitives::{
 	acl_storage::InMemoryPermissiveAclStorage,
 	executor::{tokio_runtime, TokioHandle},
@@ -68,11 +68,6 @@ fn start_key_server(key_server_index: usize, executor: TokioHandle) -> Arc<KeySe
 
 	let key_server_key_pair = Arc::new(InMemoryKeyServerKeyPair::new(key_servers_key_pairs[key_server_index].clone()));
 	let key_server_config = ClusterConfiguration {
-		listener_address: NodeAddress {
-			address: "127.0.0.1".into(),
-			port: 10_000u16 + key_server_index as u16,
-		},
-		allow_connecting_to_higher_nodes: true,
 		admin_address: None,
 		auto_migrate_enabled: false,
 	};
@@ -91,18 +86,15 @@ fn start_key_server(key_server_index: usize, executor: TokioHandle) -> Arc<KeySe
 	let key_storage = Arc::new(InMemoryKeyStorage::default());
 
 	key_server::Builder::new()
-		.with_self_key_pair(key_server_key_pair.clone())
+		.with_self_key_pair(key_server_key_pair)
 		.with_acl_storage(acl_storage)
 		.with_key_storage(key_storage)
 		.with_config(key_server_config)
 		.build_for_tcp(
 			executor,
-			key_server::network::tcp::TcpConfiguration {
-				listener_address: key_server::network::tcp::NodeAddress {
-					address: "127.0.0.1".into(),
-					port: 10_000u16 + key_server_index as u16,
-				},
-				self_key_pair: key_server_key_pair.clone(),
+			key_server::network::tcp::NodeAddress {
+				address: "127.0.0.1".into(),
+				port: 10_000u16 + key_server_index as u16,
 			},
 			key_server_set,
 		)

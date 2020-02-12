@@ -81,7 +81,7 @@ impl Builder {
 	pub fn build_for_tcp(
 		self,
 		executor: TokioHandle,
-		tcp_config: crate::network::tcp::TcpConfiguration,
+		listen_address: crate::network::tcp::NodeAddress,
 		key_server_set: Arc<dyn KeyServerSet<NetworkAddress=std::net::SocketAddr>>,
 	) -> Result<Arc<KeyServerImpl>, Error> {
 		let self_key_pair = self.self_key_pair.ok_or_else(|| Error::Internal("Invalid initialization".into()))?;
@@ -89,7 +89,6 @@ impl Builder {
 		let key_storage = self.key_storage.ok_or_else(|| Error::Internal("Invalid initialization".into()))?;
 		let config = self.config.ok_or_else(|| Error::Internal("Invalid initialization".into()))?;
 
-		let listen_address = (tcp_config.listener_address.address.clone(), tcp_config.listener_address.port);
 		let connection_trigger: Box<dyn crate::key_server_cluster::connection_trigger::ConnectionTrigger<std::net::SocketAddr>> = match config.auto_migrate_enabled {
 			false => Box::new(crate::key_server_cluster::connection_trigger::SimpleConnectionTrigger::new(
 				key_server_set.clone(),
@@ -126,12 +125,9 @@ impl Builder {
 			message_processor.clone(),
 			connection_trigger,
 			connection_provider,
-			tcp_config,
-			crate::network::tcp::NetConnectionsManagerConfig {
-				allow_connecting_to_higher_nodes: true,
-				auto_migrate_enabled: true,
-				listen_address,
-			},
+			listen_address,
+			self_key_pair.clone(),
+			false,
 		)?);
 		connection_manager.start()?;
 		let cluster = crate::key_server_cluster::cluster::ClusterCore::new(
