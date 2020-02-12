@@ -458,252 +458,63 @@ impl parity_secretstore_primitives::key_server::AdminSessionsServer for KeyServe
 		unimplemented!("TODO")
 	}
 }
-/*
+
 #[cfg(test)]
 pub mod tests {
-	use std::collections::BTreeSet;
-	use std::time;
-	use std::sync::Arc;
-	use std::net::SocketAddr;
-	use std::collections::BTreeMap;
-	use futures::Future;
-	use parity_crypto::DEFAULT_MAC;
-	use parity_crypto::publickey::{Secret, Random, Generator, verify_public};
-	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
-	use parity_secretstore_primitives::key_server_set::InMemoryKeyServerSet;
-	use parity_secretstore_primitives::key_storage::{InMemoryKeyStorage, KeyStorage};
-	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
-	use crate::key_server_cluster::math;
-	use ethereum_types::{H256, H520};
-	use parity_runtime::Runtime;
-	use crate::types::{Error, Public, ClusterConfiguration, NodeAddress, RequestSignature, ServerKeyId,
-		EncryptedDocumentKey, EncryptedDocumentKeyShadow, MessageHash, EncryptedMessageSignature,
-		Requester, NodeId};
-	use crate::traits::{AdminSessionsServer, ServerKeyGenerator, DocumentKeyServer, MessageSigner, KeyServer};
+	use ethereum_types::H256;
+	use parity_crypto::publickey::{Random, Generator, verify_public};
+	use parity_secretstore_primitives::key_storage::KeyStorage;
+	use crate::types::Requester;
+	use crate::traits::{ServerKeyGenerator, DocumentKeyServer, MessageSigner};
 	use super::KeyServerImpl;
+	use crate::key_server_cluster::{
+		math,
+		cluster::tests::{MessageLoop, make_clusters},
+	};
 
-	#[derive(Default)]
-	pub struct DummyKeyServer;
-
-	impl KeyServer for DummyKeyServer {}
-
-	impl AdminSessionsServer for DummyKeyServer {
-		type ChangeServersSetFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::SessionResult<(), ()>> + Send>>;
-
-		fn change_servers_set(
-			&self,
-			_origin: Option<parity_secretstore_primitives::key_server::Origin>,
-			_old_set_signature: RequestSignature,
-			_new_set_signature: RequestSignature,
-			_new_servers_set: BTreeSet<parity_secretstore_primitives::KeyServerPublic>,
-		) -> Self::ChangeServersSetFuture {
-			unimplemented!("test-only")
-		}
-	}
-
-	impl ServerKeyGenerator for DummyKeyServer {
-		type GenerateKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::ServerKeyGenerationResult> + Send>>;
-		type RestoreKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::ServerKeyRetrievalResult> + Send>>;
-
-		fn generate_key(
-			&self,
-			_origin: Option<parity_secretstore_primitives::key_server::Origin>,
-			_key_id: ServerKeyId,
-			_author: Requester,
-			_threshold: usize,
-		) -> Self::GenerateKeyFuture {
-			unimplemented!()
-		}
-
-		fn restore_key_public(
-			&self,
-			_origin: Option<parity_secretstore_primitives::key_server::Origin>,
-			_key_id: parity_secretstore_primitives::ServerKeyId,
-			_requester: Option<Requester>,
-		) -> Self::RestoreKeyFuture {
-			unimplemented!()
-		}
-	}
-
-	impl DocumentKeyServer for DummyKeyServer {
-		type StoreDocumentKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyStoreResult> + Send>>;
-		type GenerateDocumentKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyGenerationResult> + Send>>;
-		type RestoreDocumentKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyRetrievalResult> + Send>>;
-		type RestoreDocumentKeyCommonFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyCommonRetrievalResult> + Send>>;
-		type RestoreDocumentKeyShadowFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyShadowRetrievalResult> + Send>>;
-
-		fn store_document_key(
-			&self,
-			_origin: Option<parity_secretstore_primitives::key_server::Origin>,
-			_key_id: ServerKeyId,
-			_author: Requester,
-			_common_point: Public,
-			_encrypted_document_key: Public,
-		) -> Self::StoreDocumentKeyFuture {
-			unimplemented!()
-		}
-
-		fn generate_document_key(
-			&self,
-			_origin: Option<parity_secretstore_primitives::key_server::Origin>,
-			_key_id: ServerKeyId,
-			_author: Requester,
-			_threshold: usize,
-		) -> Self::GenerateDocumentKeyFuture {
-			unimplemented!()
-		}
-
-		fn restore_document_key(
-			&self,
-			_origin: Option<parity_secretstore_primitives::key_server::Origin>,
-			_key_id: ServerKeyId,
-			_requester: Requester,
-		) -> Self::RestoreDocumentKeyFuture {
-			unimplemented!()
-		}
-
-		fn restore_document_key_common(
-			&self,
-			_origin: Option<parity_secretstore_primitives::key_server::Origin>,
-			_key_id: ServerKeyId,
-			_requester: Requester,
-		) -> Self::RestoreDocumentKeyCommonFuture {
-			unimplemented!()
-		}
-
-		fn restore_document_key_shadow(
-			&self,
-			_origin: Option<parity_secretstore_primitives::key_server::Origin>,
-			_key_id: ServerKeyId,
-			_requester: Requester,
-		) -> Self::RestoreDocumentKeyShadowFuture {
-			unimplemented!()
-		}
-	}
-
-	impl MessageSigner for DummyKeyServer {
-		type SignMessageSchnorrFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::SchnorrSigningResult> + Send>>;
-		type SignMessageEcdsaFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::EcdsaSigningResult> + Send>>;
-
-		fn sign_message_schnorr(
-			&self,
-			_origin: Option<parity_secretstore_primitives::key_server::Origin>,
-			_key_id: ServerKeyId,
-			_requester: Requester,
-			_message: parity_secretstore_primitives::H256,
-		) -> Self::SignMessageSchnorrFuture {
-			unimplemented!()
-		}
-
-		fn sign_message_ecdsa(
-			&self,
-			_origin: Option<parity_secretstore_primitives::key_server::Origin>,
-			_key_id: ServerKeyId,
-			_requester: Requester,
-			_message: parity_secretstore_primitives::H256,
-		) -> Self::SignMessageEcdsaFuture {
-			unimplemented!()
-		}
-	}
-
-	fn make_key_servers(start_port: u16, num_nodes: usize) -> (Vec<KeyServerImpl>, Vec<Arc<InMemoryKeyStorage>>, Runtime) {
-		let key_pairs: Vec<_> = (0..num_nodes).map(|_| Random.generate().unwrap()).collect();
-		let configs: Vec<_> = (0..num_nodes).map(|i| ClusterConfiguration {
-				listener_address: NodeAddress {
-					address: "127.0.0.1".into(),
-					port: start_port + (i as u16),
-				},
-				allow_connecting_to_higher_nodes: false,
-				admin_address: None,
-				auto_migrate_enabled: false,
-			}).collect();
-		let key_servers_set: BTreeMap<NodeId, SocketAddr> = key_pairs
-				.iter()
-				.enumerate()
-				.map(|(j, kp)| (kp.address(),
-					NodeAddress {
-						address: "127.0.0.1".into(),
-						port: start_port + (j as u16),
-					}))
-				.map(|(k, a)| (k.clone(), format!("{}:{}", a.address, a.port).parse().unwrap()))
-				.collect();
-		let key_storages = (0..num_nodes).map(|_| Arc::new(InMemoryKeyStorage::default())).collect::<Vec<_>>();
-		let runtime = Runtime::with_thread_count(4);
-		let key_servers: Vec<_> = configs.into_iter().enumerate().map(|(i, cfg)|
-			KeyServerImpl::new(&cfg, Arc::new(InMemoryKeyServerSet::new(false, key_servers_set.clone())),
-				Arc::new(InMemoryKeyServerKeyPair::new(key_pairs[i].clone())),
-				Arc::new(InMemoryPermissiveAclStorage::default()),
-				key_storages[i].clone(), runtime.executor()).unwrap()
-		).collect();
-
-		// wait until connections are established. It is fast => do not bother with events here
-		let start = time::Instant::now();
-		let mut tried_reconnections = false;
-		loop {
-			if key_servers.iter().all(|ks| ks.cluster().is_fully_connected()) {
-				break;
-			}
-
-			let old_tried_reconnections = tried_reconnections;
-			let mut fully_connected = true;
-			for key_server in &key_servers {
-				if !key_server.cluster().is_fully_connected() {
-					fully_connected = false;
-					if !old_tried_reconnections {
-						tried_reconnections = true;
-						key_server.cluster().connect();
-					}
-				}
-			}
-			if fully_connected {
-				break;
-			}
-			if time::Instant::now() - start > time::Duration::from_millis(3000) {
-				panic!("connections are not established in 3000ms");
-			}
-		}
-
-		(key_servers, key_storages, runtime)
+	fn make_key_server(ml: &MessageLoop, index: usize) -> KeyServerImpl {
+		KeyServerImpl::new(
+			ml.cluster(index).client(),
+			ml.acl_storage(index).clone(),
+			ml.key_storage(index).clone(),
+		).unwrap()
 	}
 
 	#[test]
-	fn document_key_generation_and_retrievement_works_over_network_with_single_node() {
+	fn document_key_generation_and_retrieval_works_over_network_with_single_node() {
 		let _ = ::env_logger::try_init();
-		let (key_servers, _, runtime) = make_key_servers(6070, 1);
+		let ml = make_clusters(1);
+		let key_server0 = make_key_server(&ml, 0);
 
 		// generate document key
 		let threshold = 0;
 		let document = Random.generate().unwrap().secret().clone();
 		let secret = Random.generate().unwrap().secret().clone();
 		let signature: Requester = parity_crypto::publickey::sign(&secret, &document).unwrap().into();
-		let generated_key = futures03::executor::block_on(
-			key_servers[0].generate_document_key(
+		let generated_key = ml.loop_until_future_completed(
+			key_server0.generate_document_key(
 				None,
 				*document,
 				signature.clone(),
 				threshold,
 			)
-		).result.unwrap();
-		let generated_key = generated_key.document_key;
+		).result.unwrap().document_key;
 
 		// now let's try to retrieve key back
-		for key_server in key_servers.iter() {
-			let retrieved_key = futures03::executor::block_on(
-				key_server.restore_document_key(
-					None,
-					*document,
-					signature.clone(),
-				)
-			).result.unwrap();
-			let retrieved_key = retrieved_key.document_key;
-			assert_eq!(retrieved_key, generated_key);
-		}
+		let retrieved_key = ml.loop_until_future_completed(
+			key_server0.restore_document_key(
+				None,
+				*document,
+				signature.clone(),
+			)
+		).result.unwrap().document_key;
+		assert_eq!(retrieved_key, generated_key);
 	}
 
 	#[test]
-	fn document_key_generation_and_retrievement_works_over_network_with_3_nodes() {
+	fn document_key_generation_and_retrieval_works_over_network_with_3_nodes() {
 		let _ = ::env_logger::try_init();
-		let (key_servers, key_storages, runtime) = make_key_servers(6080, 3);
+		let ml = make_clusters(3);
 
 		let test_cases = [0, 1, 2];
 		for threshold in &test_cases {
@@ -711,29 +522,27 @@ pub mod tests {
 			let document = Random.generate().unwrap().secret().clone();
 			let secret = Random.generate().unwrap().secret().clone();
 			let signature: Requester = parity_crypto::publickey::sign(&secret, &document).unwrap().into();
-			let generated_key = futures03::executor::block_on(
-				key_servers[0].generate_document_key(
+			let generated_key = ml.loop_until_future_completed(
+				make_key_server(&ml, 0).generate_document_key(
 					None,
 					*document,
 					signature.clone(),
 					*threshold,
 				)
-			).result.unwrap();
-			let generated_key = generated_key.document_key;
+			).result.unwrap().document_key;
 
 			// now let's try to retrieve key back
-			for (i, key_server) in key_servers.iter().enumerate() {
-				let retrieved_key = futures03::executor::block_on(
-					key_server.restore_document_key(
+			for i in 0..3 {
+				let retrieved_key = ml.loop_until_future_completed(
+					make_key_server(&ml, i).restore_document_key(
 						None,
 						*document,
 						signature.clone(),
 					)
-				).result.unwrap();
-				let retrieved_key = retrieved_key.document_key;
+				).result.unwrap().document_key;
 				assert_eq!(retrieved_key, generated_key);
 
-				let key_share = key_storages[i].get(&document).unwrap().unwrap();
+				let key_share = ml.key_storage(i).get(&document).unwrap().unwrap();
 				assert!(key_share.common_point.is_some());
 				assert!(key_share.encrypted_point.is_some());
 			}
@@ -743,7 +552,7 @@ pub mod tests {
 	#[test]
 	fn server_key_generation_and_storing_document_key_works_over_network_with_3_nodes() {
 		let _ = ::env_logger::try_init();
-		let (key_servers, _, runtime) = make_key_servers(6090, 3);
+		let ml = make_clusters(3);
 
 		let test_cases = [0, 1, 2];
 		for threshold in &test_cases {
@@ -751,8 +560,8 @@ pub mod tests {
 			let server_key_id = Random.generate().unwrap().secret().clone();
 			let requestor_secret = Random.generate().unwrap().secret().clone();
 			let signature: Requester = parity_crypto::publickey::sign(&requestor_secret, &server_key_id).unwrap().into();
-			let server_public = futures03::executor::block_on(
-				key_servers[0].generate_key(
+			let server_public = ml.loop_until_future_completed(
+				make_key_server(&ml, 0).generate_key(
 					None,
 					*server_key_id,
 					signature.clone(),
@@ -765,8 +574,8 @@ pub mod tests {
 			let encrypted_document_key = math::encrypt_secret(&generated_key, &server_public).unwrap();
 
 			// store document key
-			futures03::executor::block_on(
-				key_servers[0].store_document_key(
+			ml.loop_until_future_completed(
+				make_key_server(&ml, 0).store_document_key(
 					None,
 					*server_key_id,
 					signature.clone(),
@@ -776,9 +585,9 @@ pub mod tests {
 			).result.unwrap();
 
 			// now let's try to retrieve key back
-			for key_server in key_servers.iter() {
-				let retrieved_key = futures03::executor::block_on(
-					key_server.restore_document_key(
+			for i in 0..3 {
+				let retrieved_key = ml.loop_until_future_completed(
+					make_key_server(&ml, i).restore_document_key(
 						None,
 						*server_key_id,
 						signature.clone()
@@ -792,7 +601,7 @@ pub mod tests {
 	#[test]
 	fn server_key_generation_and_message_signing_works_over_network_with_3_nodes() {
 		let _ = ::env_logger::try_init();
-		let (key_servers, _, runtime) = make_key_servers(6100, 3);
+		let ml = make_clusters(3);
 
 		let test_cases = [0, 1, 2];
 		for threshold in &test_cases {
@@ -800,8 +609,8 @@ pub mod tests {
 			let server_key_id = Random.generate().unwrap().secret().clone();
 			let requestor_secret = Random.generate().unwrap().secret().clone();
 			let signature: Requester = parity_crypto::publickey::sign(&requestor_secret, &server_key_id).unwrap().into();
-			let server_public = futures03::executor::block_on(
-				key_servers[0].generate_key(
+			let server_public = ml.loop_until_future_completed(
+				make_key_server(&ml, 0).generate_key(
 					None,
 					*server_key_id,
 					signature.clone(),
@@ -811,8 +620,8 @@ pub mod tests {
 
 			// sign message
 			let message_hash = H256::from_low_u64_be(42);
-			let signature = futures03::executor::block_on(
-				key_servers[0].sign_message_schnorr(
+			let signature = ml.loop_until_future_completed(
+				make_key_server(&ml, 0).sign_message_schnorr(
 					None,
 					*server_key_id,
 					signature,
@@ -830,15 +639,15 @@ pub mod tests {
 	#[test]
 	fn decryption_session_is_delegated_when_node_does_not_have_key_share() {
 		let _ = ::env_logger::try_init();
-		let (key_servers, key_storages, runtime) = make_key_servers(6110, 3);
+		let ml = make_clusters(3);
 
 		// generate document key
 		let threshold = 0;
 		let document = Random.generate().unwrap().secret().clone();
 		let secret = Random.generate().unwrap().secret().clone();
 		let signature: Requester = parity_crypto::publickey::sign(&secret, &document).unwrap().into();
-		let generated_key = futures03::executor::block_on(
-			key_servers[0].generate_document_key(
+		let generated_key = ml.loop_until_future_completed(
+			make_key_server(&ml, 0).generate_document_key(
 				None,
 				*document,
 				signature.clone(),
@@ -847,32 +656,31 @@ pub mod tests {
 		).result.unwrap().document_key;
 
 		// remove key from node0
-		key_storages[0].remove(&document).unwrap();
+		ml.key_storage(0).remove(&document).unwrap();
 
 		// now let's try to retrieve key back by requesting it from node0, so that session must be delegated
-		let retrieved_key = futures03::executor::block_on(
-			key_servers[0].restore_document_key(
+		let retrieved_key = ml.loop_until_future_completed(
+			make_key_server(&ml, 0).restore_document_key(
 				None,
 				*document,
 				signature,
 			)
 		).result.unwrap().document_key;
 		assert_eq!(retrieved_key, generated_key);
-		drop(runtime);
 	}
 
 	#[test]
 	fn schnorr_signing_session_is_delegated_when_node_does_not_have_key_share() {
 		let _ = ::env_logger::try_init();
-		let (key_servers, key_storages, runtime) = make_key_servers(6114, 3);
+		let ml = make_clusters(3);
 		let threshold = 1;
 
 		// generate server key
 		let server_key_id = Random.generate().unwrap().secret().clone();
 		let requestor_secret = Random.generate().unwrap().secret().clone();
 		let signature: Requester = parity_crypto::publickey::sign(&requestor_secret, &server_key_id).unwrap().into();
-		let server_public = futures03::executor::block_on(
-			key_servers[0].generate_key(
+		let server_public = ml.loop_until_future_completed(
+			make_key_server(&ml, 0).generate_key(
 				None,
 				*server_key_id,
 				signature.clone(),
@@ -881,12 +689,12 @@ pub mod tests {
 		).result.unwrap().key;
 
 		// remove key from node0
-		key_storages[0].remove(&server_key_id).unwrap();
+		ml.key_storage(0).remove(&server_key_id).unwrap();
 
 		// sign message
 		let message_hash = H256::from_low_u64_be(42);
-		let signature = futures03::executor::block_on(
-			key_servers[0].sign_message_schnorr(
+		let signature = ml.loop_until_future_completed(
+			make_key_server(&ml, 0).sign_message_schnorr(
 				None,
 				*server_key_id,
 				signature,
@@ -898,21 +706,20 @@ pub mod tests {
 		let signature_c = signature.signature_c.as_fixed_bytes().clone().into();
 		let signature_s = signature.signature_s.as_fixed_bytes().clone().into();
 		assert_eq!(math::verify_schnorr_signature(&server_public, &(signature_c, signature_s), &message_hash), Ok(true));
-		drop(runtime);
 	}
 
 	#[test]
 	fn ecdsa_signing_session_is_delegated_when_node_does_not_have_key_share() {
 		let _ = ::env_logger::try_init();
-		let (key_servers, key_storages, runtime) = make_key_servers(6117, 4);
+		let ml = make_clusters(4);
 		let threshold = 1;
 
 		// generate server key
 		let server_key_id = Random.generate().unwrap().secret().clone();
 		let requestor_secret = Random.generate().unwrap().secret().clone();
 		let signature = parity_crypto::publickey::sign(&requestor_secret, &server_key_id).unwrap();
-		let server_public = futures03::executor::block_on(
-			key_servers[0].generate_key(
+		let server_public = ml.loop_until_future_completed(
+			make_key_server(&ml, 0).generate_key(
 				None,
 				*server_key_id,
 				signature.clone().into(),
@@ -921,12 +728,12 @@ pub mod tests {
 		).result.unwrap().key;
 
 		// remove key from node0
-		key_storages[0].remove(&server_key_id).unwrap();
+		ml.key_storage(0).remove(&server_key_id).unwrap();
 
 		// sign message
 		let message_hash = H256::random();
-		let signature = futures03::executor::block_on(
-			key_servers[0].sign_message_ecdsa(
+		let signature = ml.loop_until_future_completed(
+			make_key_server(&ml, 0).sign_message_ecdsa(
 				None,
 				*server_key_id,
 				signature.clone().into(),
@@ -936,12 +743,5 @@ pub mod tests {
 
 		// check signature
 		assert!(verify_public(&server_public, &signature.into(), &message_hash).unwrap());
-		drop(runtime);
-	}
-
-	#[test]
-	fn servers_set_change_session_works_over_network() {
-		// TODO [Test]
 	}
 }
-*/

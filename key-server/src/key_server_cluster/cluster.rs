@@ -20,7 +20,6 @@ use parity_crypto::publickey::{Public, Signature, Random, Generator};
 use ethereum_types::{Address, H256};
 use log::trace;
 use parity_secretstore_primitives::acl_storage::AclStorage;
-use parity_secretstore_primitives::key_server_set::KeyServerSet;
 use parity_secretstore_primitives::key_storage::KeyStorage;
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::network::{ConnectionProvider, ConnectionManager};
@@ -34,6 +33,7 @@ use crate::key_server_cluster::message::Message;
 use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSession};
 use crate::key_server_cluster::decryption_session::{SessionImpl as DecryptionSession};
 use crate::key_server_cluster::encryption_session::{SessionImpl as EncryptionSession};
+use crate::key_server_cluster::cluster_message_processor::SessionsMessageProcessor;
 use crate::key_server_cluster::signing_session_ecdsa::{SessionImpl as EcdsaSigningSession};
 use crate::key_server_cluster::signing_session_schnorr::{SessionImpl as SchnorrSigningSession};
 use crate::key_server_cluster::key_version_negotiation_session::{SessionImpl as KeyVersionNegotiationSession,
@@ -135,33 +135,14 @@ pub trait Cluster: Send + Sync {
 	fn connected_nodes_count(&self) -> usize;
 }
 
-/// Cluster initialization parameters.
-#[derive(Clone)]
-pub struct ClusterConfiguration<NetworkAddress> {
-	///
-	pub auto_migrate_enabled: bool,
-	/// KeyPair this node holds.
-	pub self_key_pair: Arc<dyn KeyServerKeyPair>,
-	/// Cluster nodes set.
-	pub key_server_set: Arc<dyn KeyServerSet<NetworkAddress=NetworkAddress>>,
-	/// Reference to key storage
-	pub key_storage: Arc<dyn KeyStorage>,
-	/// Reference to ACL storage
-	pub acl_storage: Arc<dyn AclStorage>,
-	/// Administrator public key.
-	pub admin_address: Option<Address>,
-	/// Do not remove sessions from container.
-	pub preserve_sessions: bool,
-}
-
 /// Network cluster implementation.
-pub struct ClusterCore<C: ConnectionManager + ?Sized> {
+pub struct ClusterCore<C: ConnectionManager> {
 	/// Cluster data.
 	data: Arc<ClusterData<C>>,
 }
 
 /// Network cluster client interface implementation.
-pub struct ClusterClientImpl<C: ConnectionManager + ?Sized> {
+pub struct ClusterClientImpl<C: ConnectionManager> {
 	/// Cluster data.
 	data: Arc<ClusterData<C>>,
 }
@@ -175,7 +156,7 @@ pub struct ClusterView {
 }
 
 /// Cross-thread shareable cluster data.
-pub struct ClusterData<C: ConnectionManager + ?Sized> {
+pub struct ClusterData<C: ConnectionManager> {
 	/// KeyPair this node holds.
 	pub self_key_pair: Arc<dyn KeyServerKeyPair>,
 	/// Reference to key storage
@@ -184,8 +165,6 @@ pub struct ClusterData<C: ConnectionManager + ?Sized> {
 	pub acl_storage: Arc<dyn AclStorage>,
 	/// Administrator public key.
 	pub admin_address: Option<Address>,
-	/// Do not remove sessions from container.
-	pub preserve_sessions: bool,
 	/// Connections data.
 	pub connections: Arc<C>,
 	/// Active sessions data.
@@ -196,29 +175,50 @@ pub struct ClusterData<C: ConnectionManager + ?Sized> {
 	pub servers_set_change_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>,
 }
 
-impl<C: ConnectionManager + ?Sized> ClusterCore<C> {
-	pub fn new<NetworkAddress>(
-		sessions: Arc<ClusterSessions>,
-		message_processor: Arc<dyn MessageProcessor>,
-		connections: Arc<C>,
-		servers_set_change_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>,
-		config: ClusterConfiguration<NetworkAddress>,
-	) -> Result<Arc<Self>, Error> {
-		Ok(Arc::new(ClusterCore {
-			data: Arc::new(ClusterData {
-				self_key_pair: config.self_key_pair.clone(),
-				connections,
-				sessions: sessions.clone(),
-				key_storage: config.key_storage,
-				acl_storage: config.acl_storage,
-				admin_address: config.admin_address,
-				preserve_sessions: config.preserve_sessions,
-				message_processor,
-				servers_set_change_creator_connector
-			}),
-		}))
-	}
+/// Create cluster.
+pub fn create_cluster<CM: ConnectionManager>(
+	self_key_pair: Arc<dyn KeyServerKeyPair>,
+	admin_address: Option<Address>,
+	key_storage: Arc<dyn KeyStorage>,
+	acl_storage: Arc<dyn AclStorage>,
+	servers_set_change_creator_connector: Arc<dyn ServersSetChangeSessionCreatorConnector>,
+	connection_provider: Arc<dyn ConnectionProvider>,
+	make_connections_manager: impl FnOnce(Arc<dyn MessageProcessor>) -> Result<Arc<CM>, Error>,
+) -> Result<Arc<ClusterCore<CM>>, Error> {
+	let sessions = Arc::new(ClusterSessions::new(
+		self_key_pair.address(),
+		admin_address,
+		key_storage.clone(),
+		acl_storage.clone(),
+		servers_set_change_creator_connector.clone(),
+	));
+	let message_processor = Arc::new(SessionsMessageProcessor::new(
+		self_key_pair.clone(),
+		servers_set_change_creator_connector.clone(),
+		sessions.clone(),
+		connection_provider,
+	));
+	
+	let connections_manager = make_connections_manager(message_processor.clone())?;
+	let cluster = Arc::new(ClusterCore {
+		data: Arc::new(ClusterData {
+			self_key_pair,
+			connections: connections_manager,
+			sessions,
+			key_storage,
+			acl_storage,
+			admin_address,
+			message_processor,
+			servers_set_change_creator_connector
+		}),
+	});
 
+	cluster.run()?;
+
+	Ok(cluster)
+}
+
+impl<C: ConnectionManager> ClusterCore<C> {
 	/// Create new client interface.
 	pub fn client(&self) -> Arc<dyn ClusterClient> {
 		Arc::new(ClusterClientImpl::new(self.data.clone()))
@@ -297,7 +297,7 @@ impl Cluster for ClusterView {
 	}
 }
 
-impl<C: ConnectionManager + ?Sized> ClusterClientImpl<C> {
+impl<C: ConnectionManager> ClusterClientImpl<C> {
 	pub fn new(data: Arc<ClusterData<C>>) -> Self {
 		ClusterClientImpl {
 			data: data,
@@ -325,7 +325,7 @@ impl<C: ConnectionManager + ?Sized> ClusterClientImpl<C> {
 	}
 }
 
-impl<C: ConnectionManager + ?Sized> ClusterClient for ClusterClientImpl<C> {
+impl<C: ConnectionManager> ClusterClient for ClusterClientImpl<C> {
 	fn new_generation_session(
 		&self,
 		session_id: SessionId,
@@ -594,16 +594,16 @@ pub mod tests {
 	use parking_lot::{Mutex, RwLock};
 	use ethereum_types::{Address, H256};
 	use parity_crypto::publickey::{Random, Generator, Public, Signature, sign};
-	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
-	use parity_secretstore_primitives::key_server_set::InMemoryKeyServerSet;
-	use parity_secretstore_primitives::key_storage::InMemoryKeyStorage;
+	use parity_secretstore_primitives::acl_storage::{AclStorage, InMemoryPermissiveAclStorage};
+	use parity_secretstore_primitives::key_server_set::{KeyServerSet, InMemoryKeyServerSet};
+	use parity_secretstore_primitives::key_storage::{KeyStorage, InMemoryKeyStorage};
 	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
 	use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
 	use crate::network::ConnectionManager;
 	use crate::network::in_memory::{InMemoryMessagesQueue, InMemoryConnectionsManager, new_in_memory_connections};
 	use crate::key_server_cluster::{NodeId, SessionId, Requester, Error};
 	use crate::key_server_cluster::message::Message;
-	use crate::key_server_cluster::cluster::{Cluster, ClusterCore, ClusterConfiguration, ClusterClient};
+	use crate::key_server_cluster::cluster::{Cluster, ClusterCore, ClusterClient, create_cluster};
 	use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, ClusterSessions, AdminSession,
 		ClusterSessionsListener};
 	use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSession,
@@ -615,43 +615,39 @@ pub mod tests {
 	use crate::key_server_cluster::key_version_negotiation_session::{SessionImpl as KeyVersionNegotiationSession,
 		IsolatedSessionTransport as KeyVersionNegotiationSessionTransport};
 
-	/// Create new in-memory backed cluster
-	#[cfg(test)]
+	/// Create new in-memory backed cluster.
 	pub fn new_test_cluster(
 		messages: InMemoryMessagesQueue,
-		config: ClusterConfiguration<std::net::SocketAddr>,
+		key_server_set: Arc<dyn KeyServerSet<NetworkAddress=std::net::SocketAddr>>,
+		self_key_pair: Arc<dyn KeyServerKeyPair>,
+		key_storage: Arc<dyn KeyStorage>,
+		acl_storage: Arc<dyn AclStorage>,
+		preserve_sessions: bool,
 	) -> Result<Arc<ClusterCore<InMemoryConnectionsManager>>, Error> {
 		use crate::key_server_cluster::{
-			cluster_message_processor::SessionsMessageProcessor,
 			connection_trigger::{ConnectionTrigger, SimpleConnectionTrigger},
 		};
 
-		let nodes = config.key_server_set.snapshot().current_set;
-		let connections = Arc::new(new_in_memory_connections(messages, config.self_key_pair.address(), nodes.keys().cloned().collect()));
+		let nodes = key_server_set.snapshot().current_set;
+		let connections = Arc::new(new_in_memory_connections(messages, self_key_pair.address(), nodes.keys().cloned().collect()));
 		let connections_manager = connections.manager();
-
-		let connection_trigger = Box::new(SimpleConnectionTrigger::new(config.key_server_set.clone(), config.admin_address));
+		let connection_trigger = Box::new(SimpleConnectionTrigger::new(key_server_set, None));
 		let servers_set_change_creator_connector = connection_trigger.servers_set_change_creator_connector();
-		let mut sessions = ClusterSessions::new(
-			config.self_key_pair.address(),
-			config.admin_address,
-			config.key_storage.clone(),
-			config.acl_storage.clone(),
+		let cluster = create_cluster(
+			self_key_pair,
+			None,
+			key_storage,
+			acl_storage,
 			servers_set_change_creator_connector.clone(),
-		);
-		if config.preserve_sessions {
-			sessions.preserve_sessions();
-		}
-		let sessions = Arc::new(sessions);
-
-		let message_processor = Arc::new(SessionsMessageProcessor::new(
-			config.self_key_pair.clone(),
-			servers_set_change_creator_connector.clone(),
-			sessions.clone(),
 			connections_manager.provider(),
-		));
+			move |_message_processor| Ok(connections_manager),
+		)?;
 
-		ClusterCore::new(sessions, message_processor, connections_manager, servers_set_change_creator_connector, config)
+		if preserve_sessions {
+			cluster.data.sessions.preserve_sessions();
+		}
+
+		Ok(cluster)
 	}
 
 	#[derive(Default)]
@@ -908,19 +904,17 @@ pub mod tests {
 		pub fn include(&mut self, node_key_pair: Arc<InMemoryKeyServerKeyPair>) -> usize {
 			let key_storage = Arc::new(InMemoryKeyStorage::default());
 			let acl_storage = Arc::new(InMemoryPermissiveAclStorage::default());
-			let cluster_params = ClusterConfiguration {
-				self_key_pair: node_key_pair.clone(),
-				key_server_set: Arc::new(InMemoryKeyServerSet::new(false, self.nodes().iter()
+			let cluster = new_test_cluster(
+				self.messages.clone(),
+				Arc::new(InMemoryKeyServerSet::new(false, self.nodes().iter()
 					.chain(::std::iter::once(&node_key_pair.address()))
 					.map(|n| (*n, format!("127.0.0.1:{}", 13).parse().unwrap()))
 					.collect())),
-				key_storage: key_storage.clone(),
-				acl_storage: acl_storage.clone(),
-				admin_address: None,
-				preserve_sessions: self.preserve_sessions,
-				auto_migrate_enabled: false,
-			};
-			let cluster = new_test_cluster(self.messages.clone(), cluster_params).unwrap();
+				node_key_pair.clone(),
+				key_storage.clone(),
+				acl_storage.clone(),
+				self.preserve_sessions,
+			).unwrap();
 
 			for cluster in self.clusters_map.values(){
 				cluster.data.connections.include(node_key_pair.address());
@@ -951,7 +945,8 @@ pub mod tests {
 
 		/// Take next message and process it.
 		pub fn take_and_process_message(&self) -> bool {
-			let (from, to, message) = match self.take_message() {
+			let maybe_message = self.take_message();
+			let (from, to, message) = match maybe_message {
 				Some((from, to, message)) => (from, to, message),
 				None => return false,
 			};
@@ -965,6 +960,25 @@ pub mod tests {
 			while !predicate() {
 				if !self.take_and_process_message() {
 					panic!("message queue is empty but goal is not achieved");
+				}
+			}
+		}
+
+		/// Loops until there are no messages in the queue.
+		pub fn loop_until_future_completed<T: Send + 'static>(
+			&self,
+			fut: impl std::future::Future<Output=T> + Send + 'static,
+		) -> T {
+			use futures03::FutureExt;
+			
+			let (sender, mut receiver) = futures03::channel::oneshot::channel();
+			let pool = futures03::executor::ThreadPool::new().unwrap();
+			pool.spawn_ok(fut.map(|result| { let _ = sender.send(result); }));
+			loop {
+				if !self.take_and_process_message() {
+					if let Some(result) = receiver.try_recv().unwrap() {
+						return result;
+					}
 				}
 			}
 		}
@@ -985,19 +999,19 @@ pub mod tests {
 			.map(|_| Arc::new(InMemoryKeyServerKeyPair::new(Random.generate().unwrap()))).collect();
 		let key_storages: Vec<_> = (0..num_nodes).map(|_| Arc::new(InMemoryKeyStorage::default())).collect();
 		let acl_storages: Vec<_> = (0..num_nodes).map(|_| Arc::new(InMemoryPermissiveAclStorage::default())).collect();
-		let cluster_params: Vec<_> = (0..num_nodes).map(|i| ClusterConfiguration {
-			self_key_pair: key_pairs[i].clone(),
-			key_server_set: Arc::new(InMemoryKeyServerSet::new(false, key_pairs.iter().enumerate()
-				.map(|(j, kp)| (kp.address(), format!("127.0.0.1:{}", ports_begin + j as u16).parse().unwrap()))
-				.collect())),
-			key_storage: key_storages[i].clone(),
-			acl_storage: acl_storages[i].clone(),
-			admin_address: None,
-			preserve_sessions,
-			auto_migrate_enabled: false,
-		}).collect();
-		let clusters: Vec<_> = cluster_params.into_iter()
-			.map(|params| new_test_cluster(messages.clone(), params).unwrap())
+		let clusters: Vec<_> = (0..num_nodes).into_iter()
+			.map(|i| {
+				new_test_cluster(
+					messages.clone(),
+					Arc::new(InMemoryKeyServerSet::new(false, key_pairs.iter().enumerate()
+						.map(|(j, kp)| (kp.address(), format!("127.0.0.1:{}", ports_begin + j as u16).parse().unwrap()))
+						.collect())),
+					key_pairs[i].clone(),
+					key_storages[i].clone(),
+					acl_storages[i].clone(),
+					preserve_sessions,
+				).unwrap()
+			})
 			.collect();
 
 		let clusters_map = clusters.iter().map(|c| (c.data.self_key_pair.address(), c.clone())).collect();

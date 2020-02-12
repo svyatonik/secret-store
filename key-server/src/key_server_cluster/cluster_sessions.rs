@@ -16,7 +16,7 @@
 
 use std::time::{Duration, Instant};
 use std::sync::{Arc, Weak};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::{VecDeque, BTreeMap, BTreeSet};
 use futures::{oneshot, Oneshot, Complete, Future};
 use lazy_static::lazy_static;
@@ -196,7 +196,7 @@ pub struct ClusterSessionsContainer<S: ClusterSession, SC: ClusterSessionCreator
 	/// Sessions container state.
 	container_state: Arc<Mutex<ClusterSessionsContainerState>>,
 	/// Do not actually remove sessions.
-	preserve_sessions: bool,
+	preserve_sessions: AtomicBool,
 }
 
 /// Session and its message queue.
@@ -277,14 +277,14 @@ impl ClusterSessions {
 	}
 
 	#[cfg(test)]
-	pub fn preserve_sessions(&mut self) {
-		self.generation_sessions.preserve_sessions = true;
-		self.encryption_sessions.preserve_sessions = true;
-		self.decryption_sessions.preserve_sessions = true;
-		self.schnorr_signing_sessions.preserve_sessions = true;
-		self.ecdsa_signing_sessions.preserve_sessions = true;
-		self.negotiation_sessions.preserve_sessions = true;
-		self.admin_sessions.preserve_sessions = true;
+	pub fn preserve_sessions(&self) {
+		self.generation_sessions.preserve_sessions.store(true, Ordering::Relaxed);
+		self.encryption_sessions.preserve_sessions.store(true, Ordering::Relaxed);
+		self.decryption_sessions.preserve_sessions.store(true, Ordering::Relaxed);
+		self.schnorr_signing_sessions.preserve_sessions.store(true, Ordering::Relaxed);
+		self.ecdsa_signing_sessions.preserve_sessions.store(true, Ordering::Relaxed);
+		self.negotiation_sessions.preserve_sessions.store(true, Ordering::Relaxed);
+		self.admin_sessions.preserve_sessions.store(true, Ordering::Relaxed);
 	}
 
 	/// Send session-level keep-alive messages.
@@ -330,7 +330,7 @@ impl<S, SC> ClusterSessionsContainer<S, SC> where S: ClusterSession, SC: Cluster
 			sessions: RwLock::new(BTreeMap::new()),
 			listeners: Mutex::new(Vec::new()),
 			container_state: container_state,
-			preserve_sessions: false,
+			preserve_sessions: AtomicBool::new(false),
 		}
 	}
 
@@ -445,7 +445,7 @@ impl<S, SC> ClusterSessionsContainer<S, SC> where S: ClusterSession, SC: Cluster
 	}
 
 	fn do_remove(&self, session_id: &S::Id, sessions: &mut BTreeMap<S::Id, QueuedSession<S>>) {
-		if !self.preserve_sessions {
+		if !self.preserve_sessions.load(Ordering::Relaxed) {
 			if let Some(session) = sessions.remove(session_id) {
 				self.container_state.lock().on_session_completed();
 				self.notify_listeners(|l| l.on_session_removed(session.session.clone()));

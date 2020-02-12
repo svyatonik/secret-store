@@ -24,6 +24,7 @@ mod blockchain;
 pub mod network;
 
 use std::sync::Arc;
+use crate::network::tcp::{NetConnectionsManager};
 
 pub use crate::network::{ConnectionProvider, ConnectionManager, Connection};
 pub use crate::types::{ServerKeyId, EncryptedDocumentKey, RequestSignature, Public,
@@ -103,49 +104,31 @@ impl Builder {
 			)),
 		};
 		let servers_set_change_creator_connector = connection_trigger.servers_set_change_creator_connector();
-		let sessions = Arc::new(crate::key_server_cluster::cluster_sessions::ClusterSessions::new(
-			self_key_pair.address(),
-			config.admin_address,
-			key_storage.clone(),
-			acl_storage.clone(),
-			servers_set_change_creator_connector.clone(),
-		));
-
 		let mut nodes = key_server_set.snapshot().current_set;
 		let is_isolated = nodes.remove(&self_key_pair.address()).is_none();
 		let connection_provider = Arc::new(crate::network::tcp::NetConnectionsContainer::new(is_isolated, nodes));
-		let message_processor = Arc::new(crate::key_server_cluster::cluster_message_processor::SessionsMessageProcessor::new(
+
+		let cluster = crate::key_server_cluster::create_cluster(
 			self_key_pair.clone(),
-			servers_set_change_creator_connector.clone(),
-			sessions.clone(),
-			connection_provider.clone(),
-		));
-		let connection_manager = Arc::new(crate::network::tcp::NetConnectionsManager::new(
-			executor,
-			message_processor.clone(),
-			connection_trigger,
-			connection_provider,
-			listen_address,
-			self_key_pair.clone(),
-			false,
-		)?);
-		connection_manager.start()?;
-		let cluster = crate::key_server_cluster::cluster::ClusterCore::new(
-			sessions,
-			message_processor,
-			connection_manager,
+			config.admin_address,
+			key_storage.clone(),
+			acl_storage.clone(),
 			servers_set_change_creator_connector,
-			crate::key_server_cluster::cluster::ClusterConfiguration {
-				acl_storage: acl_storage.clone(),
-				admin_address: config.admin_address,
-				auto_migrate_enabled: true,
-				key_server_set: key_server_set.clone(),
-				key_storage: key_storage.clone(),
-				preserve_sessions: false,
-				self_key_pair: self_key_pair.clone(),
+			connection_provider.clone(),
+			move |message_processor| {
+				let connections_manager = Arc::new(NetConnectionsManager::new(
+					executor,
+					message_processor,
+					connection_trigger,
+					connection_provider,
+					listen_address,
+					self_key_pair,
+					false,
+				)?);
+				connections_manager.start()?;
+				Ok(connections_manager)
 			},
 		)?;
-		cluster.run()?;
 
 		key_server::KeyServerImpl::new(
 			cluster.client(),
