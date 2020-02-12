@@ -7,4 +7,5 @@ members = [
 	"primitives",
 	"bin/http",
 	"bin/standalone",
+	"bin/util",
 ]

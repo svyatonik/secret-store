@@ -6,7 +6,7 @@ authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2018"
 
 [[bin]]
-name = "secretsore-standalone"
+name = "secretstore-standalone"
 path = "src/main.rs"
 
 [dependencies]

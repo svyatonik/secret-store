@@ -1,0 +1,14 @@
+name: secretstore-util
+version: "0.1.0"
+author: Parity Technologies <admin@parity.io>
+about: Parity Secret Store Util
+subcommands:
+    - sign-server-key-id:
+        about: Sign server key ID.
+        args:
+            - signer-secret:
+                required: true
+                help: Signer secret key (hex-encoded Secret).
+            - server-key-id:
+                required: true
+                help: Key ID (hex-encoded H256).

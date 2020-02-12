@@ -6,7 +6,7 @@ authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2018"
 
 [[bin]]
-name = "secretsore-http"
+name = "secretstore-http"
 path = "src/main.rs"
 
 [dependencies]
