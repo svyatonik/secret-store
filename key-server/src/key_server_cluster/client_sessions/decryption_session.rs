@@ -238,6 +238,16 @@ impl SessionImpl {
 		self.data.lock().origin.clone()
 	}
 
+	/// Returns key threshold.
+	pub fn threshold(&self) -> usize {
+		self.core.meta.threshold
+	}
+
+	/// Returns true if shadow decryption is requested.
+	pub fn is_shadow_decryption_requested(&self) -> Option<bool> {
+		self.data.lock().is_shadow_decryption
+	}
+
 	/// Get session completion result (if available).
 	pub fn result(&self) -> Option<Result<EncryptedDocumentKeyShadow, Error>> {
 		self.data.lock().result.clone()

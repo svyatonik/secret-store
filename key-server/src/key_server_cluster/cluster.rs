@@ -22,6 +22,10 @@ use log::trace;
 use parity_secretstore_primitives::acl_storage::AclStorage;
 use parity_secretstore_primitives::key_storage::KeyStorage;
 use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
+use parity_secretstore_primitives::service::{
+	ServiceTasksListener,
+	ServiceTasksListenerRegistrar,
+};
 use crate::network::{ConnectionProvider, ConnectionManager};
 use crate::key_server_cluster::{Error, NodeId, SessionId, Requester};
 use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, AdminSession, ClusterSessions,
@@ -37,7 +41,7 @@ use crate::key_server_cluster::cluster_message_processor::SessionsMessageProcess
 use crate::key_server_cluster::signing_session_ecdsa::{SessionImpl as EcdsaSigningSession};
 use crate::key_server_cluster::signing_session_schnorr::{SessionImpl as SchnorrSigningSession};
 use crate::key_server_cluster::key_version_negotiation_session::{SessionImpl as KeyVersionNegotiationSession,
-	IsolatedSessionTransport as KeyVersionNegotiationSessionTransport, ContinueAction};
+	IsolatedSessionTransport as KeyVersionNegotiationSessionTransport, ContinueAction, FailedContinueAction};
 use crate::key_server_cluster::connection_trigger::ServersSetChangeSessionCreatorConnector;
 
 /// Cluster interface for external clients.
@@ -99,12 +103,8 @@ pub trait ClusterClient: Send + Sync {
 		new_set_signature: Signature,
 	) -> Result<WaitableSession<AdminSession>, Error>;
 
-	/// Listen for new generation sessions.
-	fn add_generation_listener(&self, listener: Arc<dyn ClusterSessionsListener<GenerationSession>>);
-	/// Listen for new decryption sessions.
-	fn add_decryption_listener(&self, listener: Arc<dyn ClusterSessionsListener<DecryptionSession>>);
-	/// Listen for new key version negotiation sessions.
-	fn add_key_version_negotiation_listener(&self, listener: Arc<dyn ClusterSessionsListener<KeyVersionNegotiationSession<KeyVersionNegotiationSessionTransport>>>);
+	/// Return cluster session listener registrar.
+	fn session_listener_registrar(&self) -> Arc<dyn ServiceTasksListenerRegistrar>;
 
 	/// Ask node to make 'faulty' generation sessions.
 	#[cfg(test)]
@@ -143,6 +143,12 @@ pub struct ClusterCore<C: ConnectionManager> {
 
 /// Network cluster client interface implementation.
 pub struct ClusterClientImpl<C: ConnectionManager> {
+	/// Cluster data.
+	data: Arc<ClusterData<C>>,
+}
+
+/// Session listener registrar.
+struct ClusterSessionListenerRegistrar<C: ConnectionManager> {
 	/// Cluster data.
 	data: Arc<ClusterData<C>>,
 }
@@ -493,16 +499,11 @@ impl<C: ConnectionManager> ClusterClient for ClusterClientImpl<C> {
 			})
 	}
 
-	fn add_generation_listener(&self, listener: Arc<dyn ClusterSessionsListener<GenerationSession>>) {
-		self.data.sessions.generation_sessions.add_listener(listener);
-	}
-
-	fn add_decryption_listener(&self, listener: Arc<dyn ClusterSessionsListener<DecryptionSession>>) {
-		self.data.sessions.decryption_sessions.add_listener(listener);
-	}
-
-	fn add_key_version_negotiation_listener(&self, listener: Arc<dyn ClusterSessionsListener<KeyVersionNegotiationSession<KeyVersionNegotiationSessionTransport>>>) {
-		self.data.sessions.negotiation_sessions.add_listener(listener);
+	/// Return cluster session listener registrar.
+	fn session_listener_registrar(&self) -> Arc<dyn ServiceTasksListenerRegistrar> {
+		Arc::new(ClusterSessionListenerRegistrar {
+			data: self.data.clone(),
+		})
 	}
 
 	#[cfg(test)]
@@ -523,6 +524,107 @@ impl<C: ConnectionManager> ClusterClient for ClusterClientImpl<C> {
 	#[cfg(test)]
 	fn connect(&self) {
 		self.data.connections.connect()
+	}
+}
+
+impl<C: ConnectionManager> ServiceTasksListenerRegistrar for ClusterSessionListenerRegistrar<C> {
+	fn register_listener(&self, listener: Arc<dyn ServiceTasksListener>) {
+		use parity_secretstore_primitives::key_server::{
+			ServerKeyGenerationResult,
+			ServerKeyGenerationParams,
+			ServerKeyGenerationArtifacts,
+			DocumentKeyShadowRetrievalResult,
+			DocumentKeyShadowRetrievalParams,
+			DocumentKeyShadowRetrievalArtifacts,
+		};
+	
+		struct ListenerWrapper(Arc<dyn ServiceTasksListener>);
+
+		impl ClusterSessionsListener<GenerationSession> for ListenerWrapper {
+			fn on_session_removed(&self, session: Arc<GenerationSession>) {
+				// by this time sesion must already be completed - either successfully, or not
+				assert!(session.is_finished());
+
+				let key_id = session.id();
+				if let Some(session_result) = session.result() {
+					self.0.server_key_generated(ServerKeyGenerationResult {
+						origin: session.origin(),
+						params: ServerKeyGenerationParams {
+							key_id,
+						},
+						result: session_result.map(|key| ServerKeyGenerationArtifacts { key }),
+					})
+				}
+			}
+		}
+
+		impl ClusterSessionsListener<DecryptionSession> for ListenerWrapper {
+			fn on_session_removed(&self, session: Arc<DecryptionSession>) {
+				// by this time sesion must already be completed - either successfully, or not
+				assert!(session.is_finished());
+
+				let session_id = session.id();
+				let key_id = session_id.id;
+				if let Some(session_result) = session.result() {
+					let session_side_result = (
+						session.is_shadow_decryption_requested(),
+						session.requester(),
+						session.broadcast_shadows(),
+					);
+					
+					if let (Some(true), Some(requester), Some(participants_coefficients)) = session_side_result {
+						self.0.document_key_shadow_retrieved(DocumentKeyShadowRetrievalResult {
+							origin: session.origin(),
+							params: DocumentKeyShadowRetrievalParams {
+								key_id,
+								requester,
+							},
+							result: session_result.map(|result| DocumentKeyShadowRetrievalArtifacts {
+								common_point: result.common_point.expect("shadow decryption is requested; qed"),
+								threshold: session.threshold(),
+								encrypted_document_key: result.decrypted_secret,
+								participants_coefficients,
+							}),
+						});
+					}
+				}
+			}
+		}
+
+		impl ClusterSessionsListener<KeyVersionNegotiationSession<KeyVersionNegotiationSessionTransport>> for ListenerWrapper {
+			fn on_session_removed(&self, session: Arc<KeyVersionNegotiationSession<KeyVersionNegotiationSessionTransport>>) {
+				// by this time sesion must already be completed - either successfully, or not
+				assert!(session.is_finished());
+
+				// we're interested in:
+				// 1) sessions failed with fatal error
+				// 2) with decryption continue action
+				let error = match session.result() {
+					Some(Err(ref error)) if !error.is_non_fatal() => error.clone(),
+					_ => return,
+				};
+
+				let (origin, requester) = match session.take_failed_continue_action() {
+					Some(FailedContinueAction::Decrypt(origin, requester)) => (origin, requester),
+					_ => return,
+				};
+
+				let meta = session.meta();
+				let key_id = meta.id;
+				self.0.document_key_shadow_retrieved(DocumentKeyShadowRetrievalResult {
+					origin,
+					params: DocumentKeyShadowRetrievalParams {
+						key_id,
+						requester: requester.into(),
+					},
+					result: Err(error),
+				});
+			}
+		}
+
+		self.data.sessions.generation_sessions.add_listener(Arc::new(ListenerWrapper(listener.clone())));
+		self.data.sessions.decryption_sessions.add_listener(Arc::new(ListenerWrapper(listener.clone())));
+		self.data.sessions.negotiation_sessions.add_listener(Arc::new(ListenerWrapper(listener)));	
 	}
 }
 
@@ -599,13 +701,13 @@ pub mod tests {
 	use parity_secretstore_primitives::key_storage::{KeyStorage, InMemoryKeyStorage};
 	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
 	use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
+	use parity_secretstore_primitives::service::ServiceTasksListenerRegistrar;
 	use crate::network::ConnectionManager;
 	use crate::network::in_memory::{InMemoryMessagesQueue, InMemoryConnectionsManager, new_in_memory_connections};
 	use crate::key_server_cluster::{NodeId, SessionId, Requester, Error};
 	use crate::key_server_cluster::message::Message;
 	use crate::key_server_cluster::cluster::{Cluster, ClusterCore, ClusterClient, create_cluster};
-	use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, ClusterSessions, AdminSession,
-		ClusterSessionsListener};
+	use crate::key_server_cluster::cluster_sessions::{WaitableSession, ClusterSession, ClusterSessions, AdminSession};
 	use crate::key_server_cluster::generation_session::{SessionImpl as GenerationSession,
 		SessionState as GenerationSessionState};
 	use crate::key_server_cluster::decryption_session::{SessionImpl as DecryptionSession};
@@ -734,9 +836,9 @@ pub mod tests {
 			unimplemented!("test-only")
 		}
 
-		fn add_generation_listener(&self, _listener: Arc<dyn ClusterSessionsListener<GenerationSession>>) {}
-		fn add_decryption_listener(&self, _listener: Arc<dyn ClusterSessionsListener<DecryptionSession>>) {}
-		fn add_key_version_negotiation_listener(&self, _listener: Arc<dyn ClusterSessionsListener<KeyVersionNegotiationSession<KeyVersionNegotiationSessionTransport>>>) {}
+		fn session_listener_registrar(&self) -> Arc<dyn ServiceTasksListenerRegistrar> {
+			unimplemented!("test-only")
+		}
 
 		fn make_faulty_generation_sessions(&self) { unimplemented!("test-only") }
 		fn generation_session(&self, _session_id: &SessionId) -> Option<Arc<GenerationSession>> { unimplemented!("test-only") }
