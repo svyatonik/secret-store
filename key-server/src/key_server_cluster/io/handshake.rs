@@ -224,7 +224,7 @@ impl<A> Future for Handshake<A> where A: AsyncRead + AsyncWrite {
 				};
 
 				if !self.trusted_nodes.as_ref().map(|tn| tn.contains(&*message.node_id)).unwrap_or(true) {
-					return Ok((stream, Err(Error::InvalidNodeId(message.node_id))).into());
+					return Ok((stream, Err(Error::InvalidNodeId(*message.node_id))).into());
 				}
 
 				self.peer_node_id = Some(message.node_id.into());
