@@ -5,6 +5,7 @@ members = [
 	"http-service",
 	"key-server",
 	"primitives",
+	"substrate-service",
 	"bin/http",
 	"bin/standalone",
 	"bin/util",
