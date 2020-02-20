@@ -1,0 +1,75 @@
+[package]
+name = "parity-secretstore-substrate"
+version = "0.1.0"
+authors = ["Parity Technologies <admin@parity.io>"]
+edition = "2018"
+
+[dependencies]
+ansi_term = "0.9"
+codec = { package = "parity-scale-codec", version = "1.0" }
+env_logger = "0.7"
+futures = "0.3"
+hex = "0.4"
+#jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee.git", features = ["ws"] }
+jsonrpsee = { path = "/home/svyatonik/dev/jsonrpsee", features = ["ws"] }
+log = "0.4"
+parity-crypto = "0.4"
+parking_lot = "0.9"
+parity-secretstore-substrate-service = { path = "../../substrate-service" }
+parity-secretstore-key-server = { path = "../../key-server" }
+parity-secretstore-primitives = { path = "../../primitives" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+time = "0.1"
+
+[dependencies.sp-core]
+git = "https://github.com/svyatonik/substrate"
+rev = "1399451823d4c824a559b452950c78c6c499d3c7"
+package = "sp-core"
+
+[dependencies.sp-runtime]
+git = "https://github.com/svyatonik/substrate"
+rev = "1399451823d4c824a559b452950c78c6c499d3c7"
+package = "sp-runtime"
+
+[dependencies.frame-system]
+git = "https://github.com/svyatonik/substrate"
+rev = "1399451823d4c824a559b452950c78c6c499d3c7"
+package = "frame-system"
+features = ["std"]
+
+[dependencies.pallet-transaction-payment]
+git = "https://github.com/svyatonik/substrate"
+rev = "1399451823d4c824a559b452950c78c6c499d3c7"
+package = "pallet-transaction-payment"
+features = ["std"]
+
+[dependencies.node-runtime]
+git = "https://github.com/svyatonik/substrate"
+rev = "1399451823d4c824a559b452950c78c6c499d3c7"
+package = "node-runtime"
+
+[dependencies.node-primitives]
+git = "https://github.com/svyatonik/substrate"
+rev = "1399451823d4c824a559b452950c78c6c499d3c7"
+package = "node-primitives"
+
+[dependencies.ss-primitives]
+git = "https://github.com/svyatonik/substrate"
+rev = "1399451823d4c824a559b452950c78c6c499d3c7"
+package = "ss-primitives"
+
+[dependencies.substrate-secret-store-runtime]
+git = "https://github.com/svyatonik/substrate"
+rev = "1399451823d4c824a559b452950c78c6c499d3c7"
+package = "substrate-secret-store-runtime"
+
+[dependencies.sp-keyring]
+git = "https://github.com/svyatonik/substrate"
+rev = "1399451823d4c824a559b452950c78c6c499d3c7"
+package = "sp-keyring"
+
+[dependencies.sp-version]
+git = "https://github.com/svyatonik/substrate"
+rev = "1399451823d4c824a559b452950c78c6c499d3c7"
+package = "sp-version"

@@ -8,5 +8,6 @@ members = [
 	"substrate-service",
 	"bin/http",
 	"bin/standalone",
+	"bin/substrate",
 	"bin/util",
 ]
