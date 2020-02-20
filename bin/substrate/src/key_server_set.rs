@@ -89,7 +89,7 @@ impl OnChainKeyServerSet {
 								is_confirmed: migration.is_confirmed,
 							}),
 						};
-println!("=== new snapshot: {:?}", snapshot);
+
 						data.write().best_block_snapshot = snapshot;
 					},
 					Err(err) => error!(

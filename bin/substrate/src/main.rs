@@ -39,20 +39,26 @@ fn main() {
 
 		let (best_sender, best_receiver) = futures::channel::mpsc::unbounded();
 
-		let key_server_key_pair = Arc::new(InMemoryKeyServerKeyPair::new(KeyPair::from_secret([1u8; 32].into()).unwrap()));
 		let acl_storage = Arc::new(crate::acl_storage::OnChainAclStorage::new(client.clone()));
 		let key_server_set = Arc::new(crate::key_server_set::OnChainKeyServerSet::new(
 			client.clone(),
 			self_id.clone(),
 			thread_pool,
 		));
-		let key_server = (0u16..3u16).map(|index| secret_store::start(
-			tokio_runtime.executor(),
-			key_server_key_pair.clone(),
-			10_000u16 + index,
-			acl_storage.clone(),
-			key_server_set.clone(),
-		).unwrap()).last().unwrap();
+		let (key_server_key_pair, key_server) = (0u16..3u16).map(|index| {
+			let key_server_key_pair = Arc::new(InMemoryKeyServerKeyPair::new(
+				KeyPair::from_secret([1u8 + index as u8; 32].into()).unwrap(),
+			));
+			let key_server = secret_store::start(
+				tokio_runtime.executor(),
+				key_server_key_pair.clone(),
+				10_000u16 + index,
+				acl_storage.clone(),
+				key_server_set.clone(),
+			).unwrap();
+
+			(key_server_key_pair, key_server)
+		}).last().unwrap();
 		crate::service::start(
 			client.clone(),
 			tokio_runtime.executor(),
