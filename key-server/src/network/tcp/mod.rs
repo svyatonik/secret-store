@@ -297,7 +297,7 @@ impl NetConnectionsData {
 		let mut container = self.container.data.write();
 		if !container.nodes.contains_key(&node) {
 			trace!(target: "secretstore_net", "{}: ignoring unknown connection from {} at {}",
-				self.self_key_pair.public(), node, connection.node_address());
+				self.self_key_pair.address(), node, connection.node_address());
 			return false;
 		}
 
@@ -312,7 +312,7 @@ impl NetConnectionsData {
 
 		trace!(target: "secretstore_net",
 			"{}: inserting connection to {} at {}. Connected to {} of {} nodes",
-			self.self_key_pair.public(), node, connection.node_address(),
+			self.self_key_pair.address(), node, connection.node_address(),
 			container.connections.len() + 1, container.nodes.len());
 		container.connections.insert(node, connection);
 
@@ -331,7 +331,7 @@ impl NetConnectionsData {
 			}
 
 			trace!(target: "secretstore_net", "{}: removing connection to {} at {}",
-				self.self_key_pair.public(), node_id, entry.get().node_address());
+				self.self_key_pair.address(), node_id, entry.get().node_address());
 			entry.remove_entry();
 
 			true
@@ -417,17 +417,17 @@ fn net_process_connection_result(
 		},
 		Ok(DeadlineStatus::Meet(Err(err))) => {
 			warn!(target: "secretstore_net", "{}: protocol error '{}' when establishing {} connection{}",
-				data.self_key_pair.public(), err, if outbound_addr.is_some() { "outbound" } else { "inbound" },
+				data.self_key_pair.address(), err, if outbound_addr.is_some() { "outbound" } else { "inbound" },
 				outbound_addr.map(|a| format!(" with {}", a)).unwrap_or_default());
 		},
 		Ok(DeadlineStatus::Timeout) => {
 			warn!(target: "secretstore_net", "{}: timeout when establishing {} connection{}",
-				data.self_key_pair.public(), if outbound_addr.is_some() { "outbound" } else { "inbound" },
+				data.self_key_pair.address(), if outbound_addr.is_some() { "outbound" } else { "inbound" },
 				outbound_addr.map(|a| format!(" with {}", a)).unwrap_or_default());
 		},
 		Err(err) => {
 			warn!(target: "secretstore_net", "{}: network error '{}' when establishing {} connection{}",
-				data.self_key_pair.public(), err, if outbound_addr.is_some() { "outbound" } else { "inbound" },
+				data.self_key_pair.address(), err, if outbound_addr.is_some() { "outbound" } else { "inbound" },
 				outbound_addr.map(|a| format!(" with {}", a)).unwrap_or_default());
 		},
 	}
@@ -455,7 +455,7 @@ fn net_process_connection_messages(
 				},
 				Ok((_, Err(err))) => {
 					warn!(target: "secretstore_net", "{}: protocol error '{}' when reading message from node {}",
-						data.self_key_pair.public(), err, connection.node_id());
+						data.self_key_pair.address(), err, connection.node_id());
 					// continue serving connection
 					let process_messages_future = net_process_connection_messages(
 							data.clone(), connection).then(|_| Ok(()));
@@ -465,7 +465,7 @@ fn net_process_connection_messages(
 				Err(err) => {
 					let node_id = *connection.node_id();
 					warn!(target: "secretstore_net", "{}: network error '{}' when reading message from node {}",
-						data.self_key_pair.public(), err, node_id);
+						data.self_key_pair.address(), err, node_id);
 					// close connection
 					if data.remove(&*connection) {
 						let maintain_action = data.trigger.lock().on_connection_closed(&node_id);
@@ -488,7 +488,7 @@ fn net_schedule_maintain(data: Arc<NetConnectionsData>) {
 
 /// Maintain network connections.
 fn net_maintain(data: Arc<NetConnectionsData>) {
-	trace!(target: "secretstore_net", "{}: executing maintain procedures", data.self_key_pair.public());
+	trace!(target: "secretstore_net", "{}: executing maintain procedures", data.self_key_pair.address());
 
 	update_nodes_set(data.clone());
 	data.message_processor.maintain_sessions();
@@ -507,7 +507,7 @@ fn net_keep_alive(data: Arc<NetConnectionsData>) {
 		let last_message_diff = now - last_message_time;
 		if last_message_diff > KEEP_ALIVE_DISCONNECT_INTERVAL {
 			warn!(target: "secretstore_net", "{}: keep alive timeout for node {}",
-				data.self_key_pair.public(), connection.node_id());
+				data.self_key_pair.address(), connection.node_id());
 
 			let node_id = *connection.node_id();
 			if data.remove(&*connection) {
@@ -551,9 +551,9 @@ fn maintain_connection_trigger(data: Arc<NetConnectionsData>, maintain_action: O
 			let session = data.message_processor.start_servers_set_change_session(session_params);
 			match session {
 				Ok(_) => trace!(target: "secretstore_net", "{}: started auto-migrate session",
-					data.self_key_pair.public()),
+					data.self_key_pair.address()),
 				Err(err) => trace!(target: "secretstore_net", "{}: failed to start auto-migrate session with: {}",
-					data.self_key_pair.public(), err),
+					data.self_key_pair.address(), err),
 			}
 		}
 	}

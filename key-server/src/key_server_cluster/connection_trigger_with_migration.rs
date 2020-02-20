@@ -149,7 +149,7 @@ impl<NetworkAddress: Send + Sync + Clone> ConnectionTriggerWithMigration<Network
 
 			if session_state != SessionState::Idle || migration_state != MigrationState::Idle {
 				trace!(target: "secretstore_net", "{}: non-idle auto-migration state: {:?} -> {:?}",
-					self.self_key_pair.public(), (migration_state, session_state), (self.connections_action, self.session_action));
+					self.self_key_pair.address(), (migration_state, session_state), (self.connections_action, self.session_action));
 			}
 
 			if session_action != Some(SessionAction::DropAndRetry) {
@@ -290,7 +290,7 @@ impl<NetworkAddress: Send + Sync> TriggerSession<NetworkAddress> {
 				trace!(
 					target: "secretstore_net",
 					"{}: failed to sign servers set for auto-migrate session with: {}",
-					self.self_key_pair.public(), err);
+					self.self_key_pair.address(), err);
 				None
 			},
 		}

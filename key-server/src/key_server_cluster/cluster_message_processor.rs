@@ -93,7 +93,7 @@ impl SessionsMessageProcessor {
 				// this is new session => it is not yet in container
 				warn!(target: "secretstore_net",
 					"{}: {} session read error '{}' when requested for session from node {}",
-					self.self_key_pair.public(), S::type_name(), error, sender);
+					self.self_key_pair.address(), S::type_name(), error, sender);
 				if !message.is_error_message() {
 					let qed = "session_id only fails for cluster messages;
 						only session messages are passed to process_message;
@@ -117,7 +117,7 @@ impl SessionsMessageProcessor {
 					// if session is completed => stop
 					if session.is_finished() {
 						info!(target: "secretstore_net",
-							"{}: {} session completed", self.self_key_pair.public(), S::type_name());
+							"{}: {} session completed", self.self_key_pair.address(), S::type_name());
 						sessions.remove(&session_id);
 						return Some(session);
 					}
@@ -140,7 +140,7 @@ impl SessionsMessageProcessor {
 					warn!(
 						target: "secretstore_net",
 						"{}: {} session error '{}' when processing message {} from node {}",
-						self.self_key_pair.public(),
+						self.self_key_pair.address(),
 						S::type_name(),
 						err,
 						message,
@@ -214,7 +214,7 @@ impl SessionsMessageProcessor {
 				self.sessions.on_session_keep_alive(connection.node_id(), session_id.into());
 			},
 			_ => warn!(target: "secretstore_net", "{}: received unexpected message {} from node {} at {}",
-				self.self_key_pair.public(), message, connection.node_id(), connection.node_address()),
+				self.self_key_pair.address(), message, connection.node_id(), connection.node_address()),
 		}
 	}
 }
@@ -226,7 +226,7 @@ impl MessageProcessor for SessionsMessageProcessor {
 
 	fn process_connection_message(&self, connection: Arc<dyn Connection>, message: Message) {
 		trace!(target: "secretstore_net", "{}: received message {} from {}",
-			self.self_key_pair.public(), message, connection.node_id());
+			self.self_key_pair.address(), message, connection.node_id());
 
 		// error is ignored as we only process errors on session level
 		match message {
