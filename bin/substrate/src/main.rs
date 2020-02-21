@@ -10,11 +10,12 @@ mod transaction_pool;
 use std::{
 	collections::VecDeque,
 	io::Write,
+	ops::Deref,
 	sync::Arc,
 };
-use futures::future::FutureExt;
+use futures::{FutureExt, SinkExt};
 use log::error;
-use parity_crypto::publickey::{KeyPair, public_to_address};
+use parity_crypto::publickey::{Generator, Random, KeyPair, public_to_address};
 use parity_secretstore_primitives::{
 	KeyServerId,
 	executor::tokio_runtime,
@@ -35,17 +36,36 @@ fn main() {
 
 		let uri = format!("{}:{}", "localhost", 11011);
 		let self_id = KeyServerId::default();
-		let client = substrate_client::Client::new(&uri, sp_keyring::AccountKeyring::Alice.pair()).await.unwrap();
+		let client = substrate_client::Client::new(
+			&uri,
+			sp_keyring::AccountKeyring::Alice.pair(),
+		).await.unwrap();
 
-		let (best_sender, best_receiver) = futures::channel::mpsc::unbounded();
+		let mut best_senders = Vec::new();
+		let mut blokchains = Vec::new();
+		let mut acl_storages = Vec::new();
+		let mut key_server_sets = Vec::new();
 
-		let acl_storage = Arc::new(crate::acl_storage::OnChainAclStorage::new(client.clone()));
-		let key_server_set = Arc::new(crate::key_server_set::OnChainKeyServerSet::new(
-			client.clone(),
-			self_id.clone(),
-			thread_pool,
-		));
-		let (key_server_key_pair, key_server) = (0u16..3u16).map(|index| {
+		for index in 0u16..3u16 {
+			let client = substrate_client::Client::new(
+				&uri,
+				match index {
+					0 => sp_keyring::AccountKeyring::Alice.pair(),
+					1 => sp_keyring::AccountKeyring::Bob.pair(),
+					2 => sp_keyring::AccountKeyring::Charlie.pair(),
+					_ => unreachable!(),
+				},
+			).await.unwrap();
+			let acl_storage = Arc::new(crate::acl_storage::OnChainAclStorage::new(client.clone()));
+			let key_server_set = Arc::new(crate::key_server_set::OnChainKeyServerSet::new(
+				client.clone(),
+				self_id.clone(),
+				thread_pool.clone(),
+			));
+			acl_storages.push(acl_storage.clone());
+			key_server_sets.push(key_server_set.clone());
+
+			let (mut best_sender, best_receiver) = futures::channel::mpsc::unbounded();
 			let key_server_key_pair = Arc::new(InMemoryKeyServerKeyPair::new(
 				KeyPair::from_secret([1u8 + index as u8; 32].into()).unwrap(),
 			));
@@ -56,17 +76,20 @@ fn main() {
 				acl_storage.clone(),
 				key_server_set.clone(),
 			).unwrap();
-
-			(key_server_key_pair, key_server)
-		}).last().unwrap();
-		crate::service::start(
-			client.clone(),
-			tokio_runtime.executor(),
-			key_server,
-			key_server_set.clone(),
-			key_server_key_pair,
-			best_receiver,
-		).unwrap();
+			let blockchain = Arc::new(crate::blockchain::SecretStoreBlockchain::new(client.clone(), key_server_set.clone()));
+			let transaction_pool = Arc::new(crate::transaction_pool::SecretStoreTransactionPool::new(client.clone(), thread_pool.clone()));
+			blokchains.push(blockchain.clone());
+			crate::service::start(
+				blockchain,
+				transaction_pool,
+				tokio_runtime.executor(),
+				key_server,
+				key_server_set.clone(),
+				key_server_key_pair,
+				best_receiver,
+			).unwrap();
+			best_senders.push(best_sender);
+		}
 
 		let mut finalized_headers = VecDeque::new();
 		let mut finalized_header_events_retrieval_active = false;
@@ -78,14 +101,49 @@ fn main() {
 			fut_finalized_header_events
 		);
 
+		// BEGIN OF TEST CODE: UI fails to accept txs which accept KeyServerId => this test code
+		let cclient = client.clone();
+		let submit_tx = move || {
+			let cclient = cclient.clone();
+			thread_pool.spawn_ok(async move {
+				let mut tx_submitted = false;
+				let tx_hash = cclient.submit_transaction(
+					node_runtime::Call::SecretStore(
+						node_runtime::SecretStoreCall::generate_server_key(
+							Random.generate().unwrap().secret().deref().as_fixed_bytes().into(),
+							1,
+						),
+					)
+				).await;
+			});
+		};
+		// END OF TEST CODE
+
 		loop {
 			futures::select! {
 				finalized_header = fut_finalized_headers.next().fuse() => {
 					let finalized_header_hash = finalized_header.hash();
 					finalized_headers.push_back((finalized_header.number, finalized_header_hash));
-					acl_storage.set_best_block((finalized_header.number, finalized_header_hash));
-					key_server_set.set_best_block((finalized_header.number, finalized_header_hash));
+					for acl_storage in &acl_storages {
+						acl_storage.set_best_block((finalized_header.number, finalized_header_hash));
+					}
+					for key_server_set in &key_server_sets {
+						key_server_set.set_best_block((finalized_header.number, finalized_header_hash));
+					}
+					for best_sender in &best_senders {
+						best_sender.unbounded_send(finalized_header_hash).unwrap();
+					}
+					for blokchain in &blokchains {
+						blokchain.set_best_block(finalized_header_hash);
+					}
 					//service.set_best_block((finalized_header.number, finalized_header_hash));
+
+
+					// === TEST CODE ===
+					if finalized_headers.len() == 5 {
+						submit_tx();
+					}
+					// =================
 				},
 				finalized_header_events = fut_finalized_header_events => {
 					/*match finalized_header_events {

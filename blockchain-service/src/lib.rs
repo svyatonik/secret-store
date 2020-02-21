@@ -37,6 +37,7 @@ use parity_secretstore_primitives::{
 };
 
 /// Blockchain service tasks.
+#[derive(Debug)]
 pub enum BlockchainServiceTask {
 	/// Regular service task.
 	Regular(Origin, ServiceTask),
@@ -254,6 +255,7 @@ pub async fn start_service<B, E, TP, KS>(
 						&mut service_data,
 					);
 
+					service_data.last_restart_time = Instant::now();
 					service_data.recent_server_key_generation_sessions.clear();
 					service_data.recent_server_key_retrieval_sessions.clear();
 					service_data.recent_document_key_store_sessions.clear();
@@ -645,6 +647,7 @@ where
 	KS: KeyServer,
 {
 	fn server_key_generated(&self, result: ServerKeyGenerationResult) {
+println!("=== server_key_generated: {:?}", result.origin);
 		if let Some(origin) = result.origin {
 			match result.result {
 				Ok(artifacts) => self.environment.transaction_pool.publish_generated_server_key(

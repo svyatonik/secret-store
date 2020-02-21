@@ -41,8 +41,10 @@ impl Requester {
 
 	/// Return requester address.
 	pub fn address(&self, server_key_id: &ServerKeyId) -> Result<Address, Error> {
-		self.public(server_key_id)
-			.map(|p| public_to_address(&p))
+		match *self {
+			Requester::Address(address) => Ok(address),
+			_ => self.public(server_key_id).map(|p| public_to_address(&p)),
+		}
 	}
 }
 

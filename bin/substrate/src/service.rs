@@ -18,7 +18,8 @@ use crate::{
 };
 
 pub fn start(
-	client: Client,
+	blockchain: Arc<SecretStoreBlockchain>,
+	transaction_pool: Arc<SecretStoreTransactionPool>,
 	executor: TokioHandle,
 	key_server: Arc<KeyServerImpl>,
 	key_server_set: Arc<OnChainKeyServerSet>,
@@ -26,14 +27,11 @@ pub fn start(
 	new_blocks_stream: impl Stream<Item = crate::runtime::BlockHash> + Send + 'static,
 ) -> Result<(), Error> {
 	let listener_registrar = key_server.cluster().session_listener_registrar();
-	let blockchain = Arc::new(SecretStoreBlockchain::new(client.clone(), key_server_set));
-	let executor = Arc::new(executor);
-	let transaction_pool = Arc::new(SecretStoreTransactionPool::new(client));
 	start_service(
 		key_server,
 		listener_registrar,
 		blockchain,
-		executor,
+		Arc::new(executor),
 		transaction_pool,
 		Configuration {
 			self_id: key_server_key_pair.address(),

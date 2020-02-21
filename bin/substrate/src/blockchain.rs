@@ -7,9 +7,12 @@ use std::{
 };
 use log::error;
 use codec::Encode;
+use parking_lot::Mutex;
 use parity_secretstore_primitives::{
 	Address, KeyServerId, ServerKeyId,
 	key_server_set::KeyServerSet,
+	requester::Requester,
+	service::ServiceTask,
 };
 use parity_secretstore_substrate_service::{
 	Blockchain, BlockchainServiceTask, MaybeSecretStoreEvent,
@@ -27,11 +30,15 @@ pub struct SecretStoreBlockchain {
 	/// On-chain key server set.
 	key_server_set: Arc<OnChainKeyServerSet>,
 	/// Best known block.
-	best_block_hash: Option<crate::runtime::BlockHash>,
+	best_block_hash: Mutex<Option<crate::runtime::BlockHash>>,
 }
 
-/// Runtime event wrapper.
-pub struct SecretStoreEvent(crate::runtime::Event);
+/// Substrate runtime event wrapper.
+#[derive(Debug)]
+pub enum SubstrateServiceTaskWrapper {
+	Event(crate::runtime::Event),
+	Task(ss_primitives::service::ServiceTask),
+}
 
 impl SecretStoreBlockchain {
 	///
@@ -42,8 +49,13 @@ impl SecretStoreBlockchain {
 		SecretStoreBlockchain {
 			client,
 			key_server_set,
-			best_block_hash: None,
+			best_block_hash: Mutex::new(None),
 		}
+	}
+
+	///
+	pub fn set_best_block(&self, best_block_hash: crate::runtime::BlockHash) {
+		*self.best_block_hash.lock() = Some(best_block_hash);
 	}
 
 	/// Read pending tasks.
@@ -52,17 +64,17 @@ impl SecretStoreBlockchain {
 		block_hash: crate::runtime::BlockHash,
 		method: &'static str,
 		range: Range<usize>,
-	) -> Result<Vec<SecretStoreEvent>, String> {
-		let events: Vec<substrate_secret_store_runtime::Event> = futures::executor::block_on(async {
+	) -> Result<Vec<SubstrateServiceTaskWrapper>, String> {
+		let tasks: Vec<ss_primitives::service::ServiceTask> = futures::executor::block_on(async {
 			self.client.call_runtime_method(
 				block_hash,
 				method,
 				serialize_range(range),
 			).await
 		}).map_err(|error| format!("{:?}", error))?;
-		Ok(events
+		Ok(tasks
 			.into_iter()
-			.map(|event| SecretStoreEvent(crate::runtime::Event::substrate_secret_store_runtime(event)))
+			.map(|task| SubstrateServiceTaskWrapper::Task(task))
 			.collect())
 	}
 
@@ -72,7 +84,7 @@ impl SecretStoreBlockchain {
 		method: &'static str,
 		arguments: Vec<u8>,
 	) -> Result<bool, String> {
-		let best_block_hash = self.best_block_hash.ok_or_else(|| "Best block is unknown")?;
+		let best_block_hash = self.best_block_hash.lock().clone().ok_or_else(|| "Best block is unknown")?;
 
 		futures::executor::block_on(async {
 			self.client.call_runtime_method(
@@ -86,9 +98,9 @@ impl SecretStoreBlockchain {
 
 impl Blockchain for SecretStoreBlockchain {
 	type BlockHash = crate::runtime::BlockHash;
-	type Event = SecretStoreEvent;
-	type BlockEvents = Vec<SecretStoreEvent>;
-	type PendingEvents = Vec<SecretStoreEvent>;
+	type Event = SubstrateServiceTaskWrapper;
+	type BlockEvents = Vec<SubstrateServiceTaskWrapper>;
+	type PendingEvents = Vec<SubstrateServiceTaskWrapper>;
 
 	fn block_events(&self, block_hash: Self::BlockHash) -> Self::BlockEvents {
 		let events = futures::executor::block_on(
@@ -98,7 +110,7 @@ impl Blockchain for SecretStoreBlockchain {
 		match events {
 			Ok(events) => events
 				.into_iter()
-				.map(|event| SecretStoreEvent(event.event))
+				.map(|event| SubstrateServiceTaskWrapper::Event(event.event))
 				.collect(),
 			Err(error) => {
 				error!(
@@ -141,7 +153,8 @@ impl Blockchain for SecretStoreBlockchain {
 		block_hash: Self::BlockHash,
 		range: Range<usize>,
 	) -> Result<Self::PendingEvents, String> {
-		self.pending_tasks(block_hash, "SecretStoreServiceApi_server_key_retrieval_tasks", range)
+		Ok(Vec::new())
+//		self.pending_tasks(block_hash, "SecretStoreServiceApi_server_key_retrieval_tasks", range)
 	}
 
 	fn is_server_key_retrieval_response_required(
@@ -160,7 +173,8 @@ impl Blockchain for SecretStoreBlockchain {
 		block_hash: Self::BlockHash,
 		range: Range<usize>,
 	) -> Result<Self::PendingEvents, String> {
-		self.pending_tasks(block_hash, "SecretStoreServiceApi_document_key_store_tasks", range)
+		Ok(Vec::new())
+//		self.pending_tasks(block_hash, "SecretStoreServiceApi_document_key_store_tasks", range)
 	}
 
 	fn is_document_key_store_response_required(
@@ -179,7 +193,8 @@ impl Blockchain for SecretStoreBlockchain {
 		block_hash: Self::BlockHash,
 		range: Range<usize>,
 	) -> Result<Self::PendingEvents, String> {
-		self.pending_tasks(block_hash, "SecretStoreServiceApi_document_key_shadow_retrieval_tasks", range)
+		Ok(Vec::new())
+//		self.pending_tasks(block_hash, "SecretStoreServiceApi_document_key_shadow_retrieval_tasks", range)
 	}
 
 	fn is_document_key_shadow_retrieval_response_required(
@@ -195,15 +210,38 @@ impl Blockchain for SecretStoreBlockchain {
 	}
 }
 
-impl MaybeSecretStoreEvent for SecretStoreEvent {
+impl MaybeSecretStoreEvent for SubstrateServiceTaskWrapper {
 	fn as_secret_store_event(self) -> Option<BlockchainServiceTask> {
-		match self.0 {
-//			crate::runtime::Event::substrate_secret_store_runtime(event) => Some(event),
+		let origin = Default::default();
+
+		match self {
+			SubstrateServiceTaskWrapper::Event(
+				crate::runtime::Event::substrate_secret_store_runtime(
+					substrate_secret_store_runtime::Event::ServerKeyGenerationRequested(
+						key_id, requester_address, threshold,
+					),
+				)
+			) => Some(BlockchainServiceTask::Regular(
+				origin,
+				ServiceTask::GenerateServerKey(
+					key_id, Requester::Address(requester_address), threshold as usize,
+				)
+			)),
+			SubstrateServiceTaskWrapper::Task(
+				ss_primitives::service::ServiceTask::GenerateServerKey(
+					key_id, requester_address, threshold,
+				)
+			) => Some(BlockchainServiceTask::Regular(
+				origin,
+				ServiceTask::GenerateServerKey(
+					key_id, Requester::Address(requester_address), threshold as usize,
+				)
+			)),
 			_ => None,
 		}
 	}
 }
 
 fn serialize_range(range: Range<usize>) -> Vec<u8> {
-	unimplemented!()
+	(range.start as u32, range.end as u32).encode()
 }

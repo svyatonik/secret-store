@@ -192,7 +192,7 @@ pub struct ClusterSessionsContainer<S: ClusterSession, SC: ClusterSessionCreator
 	/// Active sessions.
 	sessions: RwLock<BTreeMap<S::Id, QueuedSession<S>>>,
 	/// Listeners. Lock order: sessions -> listeners.
-	listeners: Mutex<Vec<Weak<dyn ClusterSessionsListener<S>>>>,
+	listeners: Mutex<Vec<Arc<dyn ClusterSessionsListener<S>>>>,
 	/// Sessions container state.
 	container_state: Arc<Mutex<ClusterSessionsContainerState>>,
 	/// Do not actually remove sessions.
@@ -335,7 +335,7 @@ impl<S, SC> ClusterSessionsContainer<S, SC> where S: ClusterSession, SC: Cluster
 	}
 
 	pub fn add_listener(&self, listener: Arc<dyn ClusterSessionsListener<S>>) {
-		self.listeners.lock().push(Arc::downgrade(&listener));
+		self.listeners.lock().push(listener);
 	}
 
 	#[cfg(test)]
@@ -447,6 +447,7 @@ impl<S, SC> ClusterSessionsContainer<S, SC> where S: ClusterSession, SC: Cluster
 	fn do_remove(&self, session_id: &S::Id, sessions: &mut BTreeMap<S::Id, QueuedSession<S>>) {
 		if !self.preserve_sessions.load(Ordering::Relaxed) {
 			if let Some(session) = sessions.remove(session_id) {
+println!("=== ClusterSessions.do_remove");
 				self.container_state.lock().on_session_completed();
 				self.notify_listeners(|l| l.on_session_removed(session.session.clone()));
 			}
@@ -457,7 +458,9 @@ impl<S, SC> ClusterSessionsContainer<S, SC> where S: ClusterSession, SC: Cluster
 		let mut listeners = self.listeners.lock();
 		let mut listener_index = 0;
 		while listener_index < listeners.len() {
-			match listeners[listener_index].upgrade() {
+			callback(&*listeners[listener_index]);
+			listener_index += 1;
+			/*match listeners[listener_index].upgrade() {
 				Some(listener) => {
 					callback(&*listener);
 					listener_index += 1;
@@ -465,7 +468,7 @@ impl<S, SC> ClusterSessionsContainer<S, SC> where S: ClusterSession, SC: Cluster
 				None => {
 					listeners.swap_remove(listener_index);
 				},
-			}
+			}*/
 		}
 	}
 }

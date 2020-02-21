@@ -123,7 +123,7 @@ impl Client {
 	}
 
 	/// Submit runtime transaction.
-	pub async fn submit_transaction(&self, call: crate::runtime::Call) -> Result<crate::runtime::BlockHash, Error> {
+	pub async fn submit_transaction(&self, call: crate::runtime::Call) -> Result<crate::runtime::TransactionHash, Error> {
 		let index = self.next_account_index().await?;
 		let transaction = create_transaction(
 			call,
@@ -132,10 +132,11 @@ impl Client {
 			self.genesis_hash,
 			self.runtime_version,
 		);
+		let hex_transaction = format!("0x{}", hex::encode(transaction.encode()));
 		self.rpc_client.request(
 			"author_submitExtrinsic",
 			jsonrpsee::core::common::Params::Array(vec![
-				serde_json::to_value(transaction.encode()).unwrap(),
+				serde_json::to_value(hex_transaction).unwrap(),
 			]),
 		).await.map_err(Error::RequestFailed)
 	}
