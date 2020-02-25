@@ -26,6 +26,7 @@ use parity_secretstore_primitives::{
 	error::Error,
 	executor::Executor,
 	key_server::KeyServer,
+	key_storage::KeyStorage,
 	service::ServiceTasksListenerRegistrar,
 };
 use crate::{
@@ -54,6 +55,7 @@ pub trait MaybeSecretStoreEvent {
 }
 
 /// Substrate Secret Store module calls.
+#[derive(Debug)]
 pub enum SecretStoreCall {
 	/// Called when server key is generated.
 	ServerKeyGenerated(ServerKeyId, Public),
@@ -168,8 +170,9 @@ struct SubstrateBlock<B: Blockchain> {
 }
 
 /// Start listening requests from given contract.
-pub fn start_service<B, E, TP, KS>(
-	key_server: Arc<KS>,
+pub fn start_service<B, E, TP, KSrv, KStr>(
+	key_server: Arc<KSrv>,
+	key_storage: Arc<KStr>,
 	listener_registrar: Arc<dyn ServiceTasksListenerRegistrar>,
 	blockchain: Arc<B>,
 	executor: Arc<E>,
@@ -180,7 +183,8 @@ pub fn start_service<B, E, TP, KS>(
 	B: Blockchain,
 	E: Executor,
 	TP: TransactionPool,
-	KS: KeyServer,
+	KSrv: KeyServer,
+	KStr: KeyStorage,
 {
 //	let config = Arc::new(config);
 	let key_server_address = config.self_id;
@@ -191,6 +195,7 @@ pub fn start_service<B, E, TP, KS>(
 	));
 	let new_blocks_future = parity_secretstore_blockchain_service::start_service(
 		key_server,
+		key_storage,
 		listener_registrar,
 		executor.clone(),
 		transaction_pool,

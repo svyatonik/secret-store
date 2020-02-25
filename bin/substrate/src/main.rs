@@ -1,3 +1,5 @@
+#![recursion_limit="256"]
+
 mod acl_storage;
 mod blockchain;
 mod key_server_set;
@@ -69,7 +71,7 @@ fn main() {
 			let key_server_key_pair = Arc::new(InMemoryKeyServerKeyPair::new(
 				KeyPair::from_secret([1u8 + index as u8; 32].into()).unwrap(),
 			));
-			let key_server = secret_store::start(
+			let (key_storage, key_server) = secret_store::start(
 				tokio_runtime.executor(),
 				key_server_key_pair.clone(),
 				10_000u16 + index,
@@ -84,6 +86,7 @@ fn main() {
 				transaction_pool,
 				tokio_runtime.executor(),
 				key_server,
+				key_storage,
 				key_server_set.clone(),
 				key_server_key_pair,
 				best_receiver,
@@ -103,15 +106,32 @@ fn main() {
 
 		// BEGIN OF TEST CODE: UI fails to accept txs which accept KeyServerId => this test code
 		let cclient = client.clone();
-		let submit_tx = move || {
+		let cthread_pool = thread_pool.clone();
+		let key_id = Random.generate().unwrap().secret().deref().as_fixed_bytes().into();
+		let submit_generation_tx = move || {
 			let cclient = cclient.clone();
-			thread_pool.spawn_ok(async move {
+			cthread_pool.spawn_ok(async move {
 				let mut tx_submitted = false;
 				let tx_hash = cclient.submit_transaction(
 					node_runtime::Call::SecretStore(
 						node_runtime::SecretStoreCall::generate_server_key(
-							Random.generate().unwrap().secret().deref().as_fixed_bytes().into(),
+							key_id,
 							1,
+						),
+					)
+				).await;
+			});
+		};
+		let cclient = client.clone();
+		let cthread_pool = thread_pool.clone();
+		let submit_retrieval_tx = move || {
+			let cclient = cclient.clone();
+			cthread_pool.spawn_ok(async move {
+				let mut tx_submitted = false;
+				let tx_hash = cclient.submit_transaction(
+					node_runtime::Call::SecretStore(
+						node_runtime::SecretStoreCall::retrieve_server_key(
+							key_id,
 						),
 					)
 				).await;
@@ -141,7 +161,10 @@ fn main() {
 
 					// === TEST CODE ===
 					if finalized_headers.len() == 5 {
-						submit_tx();
+						submit_generation_tx();
+					}
+					if finalized_headers.len() == 10 {
+						submit_retrieval_tx();
 					}
 					// =================
 				},

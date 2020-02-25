@@ -39,6 +39,16 @@ impl TransactionPool for SecretStoreTransactionPool {
 					node_runtime::SecretStoreCall::server_key_generation_error(
 						key_id,
 					),
+				SecretStoreCall::ServerKeyRetrieved(key_id, key, threshold) =>
+					node_runtime::SecretStoreCall::server_key_retrieved(
+						key_id,
+						key,
+						threshold,
+					),
+				SecretStoreCall::ServerKeyRetrievalError(key_id) =>
+					node_runtime::SecretStoreCall::server_key_retrieval_error(
+						key_id,
+					),
 				_ => unreachable!("TODO"),
 			}
 		));

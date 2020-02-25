@@ -20,7 +20,7 @@ pub fn start(
 	listen_port: u16,
 	acl_storage: Arc<OnChainAclStorage>,
 	key_server_set: Arc<OnChainKeyServerSet>,
-) -> Result<Arc<KeyServerImpl>, Error> {
+) -> Result<(Arc<InMemoryKeyStorage>, Arc<KeyServerImpl>), Error> {
 	let key_storage = Arc::new(InMemoryKeyStorage::default());
 	let key_server_config = ClusterConfiguration {
 		admin_address: None,
@@ -29,7 +29,7 @@ pub fn start(
 	parity_secretstore_key_server::Builder::new()
 		.with_self_key_pair(key_server_key_pair)
 		.with_acl_storage(acl_storage)
-		.with_key_storage(key_storage)
+		.with_key_storage(key_storage.clone())
 		.with_config(key_server_config)
 		.build_for_tcp(
 			executor,
@@ -39,4 +39,5 @@ pub fn start(
 			},
 			key_server_set,
 		)
+		.map(|key_server| (key_storage, key_server))
 }

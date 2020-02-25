@@ -24,52 +24,52 @@ time = "0.1"
 
 [dependencies.sp-core]
 git = "https://github.com/svyatonik/substrate"
-rev = "c7a94d9d2100e9db8034f289e3ba038c1f84a66d"
+rev = "b23e58a5ca99638c3f945424ce66a707bd5903c7"
 package = "sp-core"
 
 [dependencies.sp-runtime]
 git = "https://github.com/svyatonik/substrate"
-rev = "c7a94d9d2100e9db8034f289e3ba038c1f84a66d"
+rev = "b23e58a5ca99638c3f945424ce66a707bd5903c7"
 package = "sp-runtime"
 
 [dependencies.frame-system]
 git = "https://github.com/svyatonik/substrate"
-rev = "c7a94d9d2100e9db8034f289e3ba038c1f84a66d"
+rev = "b23e58a5ca99638c3f945424ce66a707bd5903c7"
 package = "frame-system"
 features = ["std"]
 
 [dependencies.pallet-transaction-payment]
 git = "https://github.com/svyatonik/substrate"
-rev = "c7a94d9d2100e9db8034f289e3ba038c1f84a66d"
+rev = "b23e58a5ca99638c3f945424ce66a707bd5903c7"
 package = "pallet-transaction-payment"
 features = ["std"]
 
 [dependencies.node-runtime]
 git = "https://github.com/svyatonik/substrate"
-rev = "c7a94d9d2100e9db8034f289e3ba038c1f84a66d"
+rev = "b23e58a5ca99638c3f945424ce66a707bd5903c7"
 package = "node-runtime"
 
 [dependencies.node-primitives]
 git = "https://github.com/svyatonik/substrate"
-rev = "c7a94d9d2100e9db8034f289e3ba038c1f84a66d"
+rev = "b23e58a5ca99638c3f945424ce66a707bd5903c7"
 package = "node-primitives"
 
 [dependencies.ss-primitives]
 git = "https://github.com/svyatonik/substrate"
-rev = "c7a94d9d2100e9db8034f289e3ba038c1f84a66d"
+rev = "b23e58a5ca99638c3f945424ce66a707bd5903c7"
 package = "ss-primitives"
 
 [dependencies.substrate-secret-store-runtime]
 git = "https://github.com/svyatonik/substrate"
-rev = "c7a94d9d2100e9db8034f289e3ba038c1f84a66d"
+rev = "b23e58a5ca99638c3f945424ce66a707bd5903c7"
 package = "substrate-secret-store-runtime"
 
 [dependencies.sp-keyring]
 git = "https://github.com/svyatonik/substrate"
-rev = "c7a94d9d2100e9db8034f289e3ba038c1f84a66d"
+rev = "b23e58a5ca99638c3f945424ce66a707bd5903c7"
 package = "sp-keyring"
 
 [dependencies.sp-version]
 git = "https://github.com/svyatonik/substrate"
-rev = "c7a94d9d2100e9db8034f289e3ba038c1f84a66d"
+rev = "b23e58a5ca99638c3f945424ce66a707bd5903c7"
 package = "sp-version"

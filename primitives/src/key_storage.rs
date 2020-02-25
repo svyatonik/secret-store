@@ -51,7 +51,7 @@ pub struct KeyShareVersion {
 
 
 /// Secret Store key storage.
-pub trait KeyStorage: Send + Sync {
+pub trait KeyStorage: Send + Sync + 'static {
 	/// Insert new key share.
 	fn insert(&self, key_id: ServerKeyId, key: KeyShare) -> Result<(), Error>;
 	/// Update existing key share.

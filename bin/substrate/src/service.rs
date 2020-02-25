@@ -9,6 +9,7 @@ use parity_secretstore_primitives::{
 	error::Error,
 	executor::TokioHandle,
 	key_server_key_pair::KeyServerKeyPair,
+	key_storage::InMemoryKeyStorage,
 };
 use crate::{
 	blockchain::SecretStoreBlockchain,
@@ -22,6 +23,7 @@ pub fn start(
 	transaction_pool: Arc<SecretStoreTransactionPool>,
 	executor: TokioHandle,
 	key_server: Arc<KeyServerImpl>,
+	key_storage: Arc<InMemoryKeyStorage>,
 	key_server_set: Arc<OnChainKeyServerSet>,
 	key_server_key_pair: Arc<KeyServerKeyPair>,
 	new_blocks_stream: impl Stream<Item = crate::runtime::BlockHash> + Send + 'static,
@@ -29,6 +31,7 @@ pub fn start(
 	let listener_registrar = key_server.cluster().session_listener_registrar();
 	start_service(
 		key_server,
+		key_storage,
 		listener_registrar,
 		blockchain,
 		Arc::new(executor),

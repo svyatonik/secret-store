@@ -144,7 +144,7 @@ impl Blockchain for SecretStoreBlockchain {
 	) -> Result<bool, String> {
 		self.is_response_required(
 			"SecretStoreServiceApi_is_server_key_generation_response_required",
-			(key_id, key_server_id).encode(),
+			(key_server_id, key_id).encode(),
 		)
 	}
 
@@ -153,8 +153,7 @@ impl Blockchain for SecretStoreBlockchain {
 		block_hash: Self::BlockHash,
 		range: Range<usize>,
 	) -> Result<Self::PendingEvents, String> {
-		Ok(Vec::new())
-//		self.pending_tasks(block_hash, "SecretStoreServiceApi_server_key_retrieval_tasks", range)
+		self.pending_tasks(block_hash, "SecretStoreServiceApi_server_key_retrieval_tasks", range)
 	}
 
 	fn is_server_key_retrieval_response_required(
@@ -164,7 +163,7 @@ impl Blockchain for SecretStoreBlockchain {
 	) -> Result<bool, String> {
 		self.is_response_required(
 			"SecretStoreServiceApi_is_server_key_retrieval_response_required",
-			(key_id, key_server_id).encode(),
+			(key_server_id, key_id).encode(),
 		)
 	}
 
@@ -184,7 +183,7 @@ impl Blockchain for SecretStoreBlockchain {
 	) -> Result<bool, String> {
 		self.is_response_required(
 			"SecretStoreServiceApi_is_document_key_store_response_required",
-			(key_id, key_server_id).encode(),
+			(key_server_id, key_id).encode(),
 		)
 	}
 
@@ -205,7 +204,7 @@ impl Blockchain for SecretStoreBlockchain {
 	) -> Result<bool, String> {
 		self.is_response_required(
 			"SecretStoreServiceApi_is_document_key_shadow_retrieval_response_required",
-			(key_id, requester, key_server_id).encode(),
+			(key_server_id, key_id, requester).encode(),
 		)
 	}
 }
@@ -235,6 +234,28 @@ impl MaybeSecretStoreEvent for SubstrateServiceTaskWrapper {
 				origin,
 				ServiceTask::GenerateServerKey(
 					key_id, Requester::Address(requester_address), threshold as usize,
+				)
+			)),
+			SubstrateServiceTaskWrapper::Event(
+				crate::runtime::Event::substrate_secret_store_runtime(
+					substrate_secret_store_runtime::Event::ServerKeyRetrievalRequested(
+						key_id,
+					),
+				)
+			) => Some(BlockchainServiceTask::Regular(
+				origin,
+				ServiceTask::RetrieveServerKey(
+					key_id, None,
+				)
+			)),
+			SubstrateServiceTaskWrapper::Task(
+				ss_primitives::service::ServiceTask::RetrieveServerKey(
+					key_id,
+				)
+			) => Some(BlockchainServiceTask::Regular(
+				origin,
+				ServiceTask::RetrieveServerKey(
+					key_id, None,
 				)
 			)),
 			_ => None,

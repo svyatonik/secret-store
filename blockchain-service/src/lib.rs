@@ -32,6 +32,7 @@ use parity_secretstore_primitives::{
 		DocumentKeyCommonRetrievalArtifacts, DocumentKeyShadowRetrievalArtifacts,
 		ServerKeyGenerationResult, DocumentKeyShadowRetrievalResult,
 	},
+	key_storage::KeyStorage,
 	requester::Requester,
 	service::{ServiceTasksListenerRegistrar, ServiceTask},
 };
@@ -132,7 +133,7 @@ pub struct Configuration {
 }
 
 /// Service environment.
-struct Environment<E, TP, KS> {
+struct Environment<E, TP, KSrv, KStr> {
 	/// This key server id.
 	pub self_id: KeyServerId,
 	/// Futures executor reference.
@@ -140,7 +141,9 @@ struct Environment<E, TP, KS> {
 	/// Transaction pool reference.
 	pub transaction_pool: Arc<TP>,
 	/// Key server reference.
-	pub key_server: Arc<KS>,
+	pub key_server: Arc<KSrv>,
+	/// Key storage reference.
+	pub key_storage: Arc<KStr>,
 }
 
 /// Shared service data.
@@ -175,14 +178,15 @@ struct ServiceData {
 }
 
 /// Service tasks listener.
-struct ServiceTasksListener<E, TP, KS> {
+struct ServiceTasksListener<E, TP, KSrv, KStr> {
 	/// Shared service data reference.
-	pub environment: Arc<Environment<E, TP, KS>>,
+	pub environment: Arc<Environment<E, TP, KSrv, KStr>>,
 }
 
 /// Start listening requests from given contract.
-pub async fn start_service<B, E, TP, KS>(
-	key_server: Arc<KS>,
+pub async fn start_service<B, E, TP, KSrv, KStr>(
+	key_server: Arc<KSrv>,
+	key_storage: Arc<KStr>,
 	listener_registrar: Arc<dyn ServiceTasksListenerRegistrar>,
 	executor: Arc<E>,
 	transaction_pool: Arc<TP>,
@@ -192,13 +196,15 @@ pub async fn start_service<B, E, TP, KS>(
 	B: Block,
 	E: Executor,
 	TP: TransactionPool,
-	KS: KeyServer,
+	KSrv: KeyServer,
+	KStr: KeyStorage,
 {
 	let environment = Arc::new(Environment {
 		self_id: config.self_id,
 		executor,
 		transaction_pool,
 		key_server,
+		key_storage,
 	});
 	let service_data = Arc::new(RwLock::new(ServiceData {
 		last_restart_time: Instant::now(),
@@ -272,8 +278,8 @@ pub async fn start_service<B, E, TP, KS>(
 }
 
 /// Process multiple service tasks.
-fn process_tasks<E, TP, KS>(
-	future_environment: &Arc<Environment<E, TP, KS>>,
+fn process_tasks<E, TP, KSrv, KStr>(
+	future_environment: &Arc<Environment<E, TP, KSrv, KStr>>,
 	future_service_data: &Arc<RwLock<ServiceData>>,
 	current_set: &BTreeSet<KeyServerId>,
 	new_tasks: impl Iterator<Item = BlockchainServiceTask>,
@@ -281,7 +287,8 @@ fn process_tasks<E, TP, KS>(
 ) -> usize where
 	E: Executor,
 	TP: TransactionPool,
-	KS: KeyServer,
+	KSrv: KeyServer,
+	KStr: KeyStorage,
 {
 	let mut added_tasks = 0;
 	for new_task in new_tasks {
@@ -304,8 +311,8 @@ fn process_tasks<E, TP, KS>(
 }
 
 /// Process single service task.
-fn process_task<E, TP, KS>(
-	future_environment: &Arc<Environment<E, TP, KS>>,
+fn process_task<E, TP, KSrv, KStr>(
+	future_environment: &Arc<Environment<E, TP, KSrv, KStr>>,
 	future_service_data: &Arc<RwLock<ServiceData>>,
 	current_set: &BTreeSet<KeyServerId>,
 	task: BlockchainServiceTask,
@@ -313,7 +320,8 @@ fn process_task<E, TP, KS>(
 ) -> Option<impl Future<Output = ()>> where
 	E: Executor,
 	TP: TransactionPool,
-	KS: KeyServer,
+	KSrv: KeyServer,
+	KStr: KeyStorage,
 {
 	match task {
 		BlockchainServiceTask::Regular(origin, ServiceTask::GenerateServerKey(key_id, requester, threshold)) => {
@@ -339,43 +347,41 @@ fn process_task<E, TP, KS>(
 			))
 		},
 		BlockchainServiceTask::Regular(origin, ServiceTask::RetrieveServerKey(key_id, requester)) => {
-			if !filter_task(
-				&current_set,
-				&future_environment.self_id,
-				&key_id,
-				&mut service_data.server_key_retrieval_sessions,
-				&mut service_data.recent_server_key_retrieval_sessions,
-			) {
-				return None;
-			}
-
 			let future_environment = future_environment.clone();
 			let future_service_data = future_service_data.clone();
 			Some(Either::Right(Either::Left(
-				future_environment
-					.key_server
-					.restore_key_public(Some(origin), key_id, requester)
-					.map(move |result| {
-						future_service_data.write().server_key_retrieval_sessions.remove(&key_id);
-
-						match result.result {
-							Ok(artifacts) => future_environment.transaction_pool.publish_retrieved_server_key(
+				ready({
+					let key_share = future_environment.key_storage.get(&key_id);
+					match key_share {
+						Ok(Some(key_share)) => {
+							future_environment.transaction_pool.publish_retrieved_server_key(
 								origin,
-								result.params.key_id,
-								artifacts.clone(),
-							),
-							Err(error) if error.is_non_fatal() => {
-								log_nonfatal_secret_store_error(&format!("RetrieveServerKey({})", result.params.key_id), error);
-							},
-							Err(error) => {
-								log_fatal_secret_store_error(&format!("RetrieveServerKey({})", result.params.key_id), error);
-								future_environment.transaction_pool.publish_server_key_retrieval_error(
-									origin,
-									result.params.key_id,
-								);
-							},
+								key_id,
+								ServerKeyRetrievalArtifacts {
+									author: key_share.author,
+									key: key_share.public,
+									threshold: key_share.threshold,
+								},
+							)
+						},
+						Ok(None) => {
+							future_environment.transaction_pool.publish_server_key_retrieval_error(
+								origin,
+								key_id,
+							)
 						}
-					})
+						Err(error) if error.is_non_fatal() => {
+							log_nonfatal_secret_store_error(&format!("RetrieveServerKey({})", key_id), error);
+						},
+						Err(error) => {
+							log_fatal_secret_store_error(&format!("RetrieveServerKey({})", key_id), error);
+							future_environment.transaction_pool.publish_server_key_retrieval_error(
+								origin,
+								key_id,
+							);
+						},
+					}
+				})
 			)))
 		},
 		BlockchainServiceTask::Regular(
@@ -637,14 +643,15 @@ impl ServiceData {
 // => if several services are active, we may submit transaction of
 // another service. So origin must be service_id + current origin
 
-impl<E, TP, KS>
+impl<E, TP, KSrv, KStr>
 	parity_secretstore_primitives::service::ServiceTasksListener
 for
-	ServiceTasksListener<E, TP, KS>
+	ServiceTasksListener<E, TP, KSrv, KStr>
 where
 	E: Executor,
 	TP: TransactionPool,
-	KS: KeyServer,
+	KSrv: KeyServer,
+	KStr: KeyStorage,
 {
 	fn server_key_generated(&self, result: ServerKeyGenerationResult) {
 println!("=== server_key_generated: {:?}", result.origin);
