@@ -37,7 +37,6 @@ fn main() {
 		let thread_pool = futures::executor::ThreadPool::new().unwrap();
 
 		let uri = format!("{}:{}", "localhost", 11011);
-		let self_id = KeyServerId::default();
 		let client = substrate_client::Client::new(
 			&uri,
 			sp_keyring::AccountKeyring::Alice.pair(),
@@ -48,16 +47,18 @@ fn main() {
 		let mut acl_storages = Vec::new();
 		let mut key_server_sets = Vec::new();
 
-		for index in 0u16..3u16 {
+		for index in 0u16..4u16 {
 			let client = substrate_client::Client::new(
 				&uri,
 				match index {
 					0 => sp_keyring::AccountKeyring::Alice.pair(),
 					1 => sp_keyring::AccountKeyring::Bob.pair(),
 					2 => sp_keyring::AccountKeyring::Charlie.pair(),
+					3 => sp_keyring::AccountKeyring::Dave.pair(),
 					_ => unreachable!(),
 				},
 			).await.unwrap();
+			let self_id = public_to_address(KeyPair::from_secret([1u8 + index as u8 ; 32].into()).unwrap().public());
 			let acl_storage = Arc::new(crate::acl_storage::OnChainAclStorage::new(client.clone()));
 			let key_server_set = Arc::new(crate::key_server_set::OnChainKeyServerSet::new(
 				client.clone(),
@@ -113,7 +114,6 @@ fn main() {
 		let submit_generation_tx = move || {
 			let cclient = cclient.clone();
 			cthread_pool.spawn_ok(async move {
-				let mut tx_submitted = false;
 				let tx_hash = cclient.submit_transaction(
 					node_runtime::Call::SecretStore(
 						node_runtime::SecretStoreCall::generate_server_key(
@@ -130,7 +130,6 @@ fn main() {
 		let submit_retrieval_tx = move || {
 			let cclient = cclient.clone();
 			cthread_pool.spawn_ok(async move {
-				let mut tx_submitted = false;
 				let tx_hash = cclient.submit_transaction(
 					node_runtime::Call::SecretStore(
 						node_runtime::SecretStoreCall::retrieve_server_key(
@@ -146,13 +145,28 @@ fn main() {
 		let submit_store_tx = move || {
 			let cclient = cclient.clone();
 			cthread_pool.spawn_ok(async move {
-				let mut tx_submitted = false;
 				let tx_hash = cclient.submit_transaction(
 					node_runtime::Call::SecretStore(
 						node_runtime::SecretStoreCall::store_document_key(
 							key_id,
 							Random.generate().unwrap().public().deref().as_fixed_bytes().into(),
 							Random.generate().unwrap().public().deref().as_fixed_bytes().into(),
+						),
+					)
+				).await;
+			});
+		};
+		let cclient = client.clone();
+		let cthread_pool = thread_pool.clone();
+		let mut change_ks_tx_submitted = false;
+		let submit_change_ks_tx = move || {
+			let cclient = cclient.clone();
+			cthread_pool.spawn_ok(async move {
+				let tx_hash = cclient.submit_transaction(
+					node_runtime::Call::SecretStore(
+						node_runtime::SecretStoreCall::add_key_server(
+							public_to_address(KeyPair::from_secret([4u8; 32].into()).unwrap().public()),
+							"127.0.0.1:10003".to_owned().into_bytes(),
 						),
 					)
 				).await;
@@ -198,6 +212,12 @@ fn main() {
 						if !store_tx_submitted {
 							store_tx_submitted = true;
 							submit_store_tx();
+						}
+					}
+					if total_finalized_headers > 40 {
+						if !change_ks_tx_submitted {
+							change_ks_tx_submitted = true;
+							submit_change_ks_tx();
 						}
 					}
 					// =================

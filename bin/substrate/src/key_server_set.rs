@@ -5,7 +5,7 @@ use std::{
 	sync::Arc,
 };
 use futures::FutureExt;
-use log::error;
+use log::{error, trace};
 use parking_lot::RwLock;
 use codec::Encode;
 use sp_core::H256;
@@ -137,12 +137,20 @@ impl KeyServerSet for OnChainKeyServerSet {
 			)).await
 		});
 
-		if let Err(error) = submit_result {
-			error!(
+		match submit_result {
+			Ok(tx_hash) => trace!(
 				target: "secretstore_net",
-				"Error submitting start migration transaction: {:?}",
+				"{}: Start migration({}) transaction submitted: {:?}",
+				self.self_id,
+				migration_id,
+				tx_hash,
+			),
+			Err(error) => error!(
+				target: "secretstore_net",
+				"{}: Error submitting start migration transaction: {:?}",
+				self.self_id,
 				error,
-			);
+			),
 		}
 	}
 
@@ -166,12 +174,20 @@ impl KeyServerSet for OnChainKeyServerSet {
 			)).await
 		});
 
-		if let Err(error) = submit_result {
-			error!(
+		match submit_result {
+			Ok(tx_hash) => trace!(
 				target: "secretstore_net",
-				"Error submitting confirm migration transaction: {:?}",
+				"{}: Migration({}) confirmation transaction submitted: {:?}",
+				self.self_id,
+				migration_id,
+				tx_hash,
+			),
+			Err(error) => error!(
+				target: "secretstore_net",
+				"{}: Error submitting confirm migration transaction: {:?}",
+				self.self_id,
 				error,
-			);
+			),
 		}
 	}
 }

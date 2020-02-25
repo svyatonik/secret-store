@@ -239,6 +239,11 @@ pub async fn start_service<B, E, TP, KSrv, KStr>(
 			// we need to know current key servers set to distribute tasks among nodes
 			let current_set = block.current_key_servers_set();
 
+			// if we are not a part of key server set, ignore all tasks
+			if !current_set.contains(&environment.self_id) {
+				return ready(());
+			}
+
 			// first, process new tasks
 			max_additional_sessions -= process_tasks(
 				&environment,
