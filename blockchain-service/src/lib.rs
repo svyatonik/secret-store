@@ -252,7 +252,7 @@ pub async fn start_service<B, E, TP, KSrv, KStr>(
 			if let Some(pending_restart_interval) = config.pending_restart_interval {
 				let last_restart_time = service_data.last_restart_time;
 				let duration_since_last_restart = Instant::now() - last_restart_time;
-				if pending_restart_interval > duration_since_last_restart {
+				if duration_since_last_restart > pending_restart_interval {
 					process_tasks(
 						&environment,
 						&future_service_data,
@@ -327,9 +327,9 @@ fn process_task<E, TP, KSrv, KStr>(
 		BlockchainServiceTask::Regular(origin, ServiceTask::GenerateServerKey(key_id, requester, threshold)) => {
 			if !filter_task(
 				&current_set,
-				&future_environment.self_id,
+				Some(&future_environment.self_id),
 				&key_id,
-				&mut service_data.server_key_generation_sessions,
+				Some(&mut service_data.server_key_generation_sessions),
 				&mut service_data.recent_server_key_generation_sessions,
 			) {
 				return None;
@@ -347,8 +347,17 @@ fn process_task<E, TP, KSrv, KStr>(
 			))
 		},
 		BlockchainServiceTask::Regular(origin, ServiceTask::RetrieveServerKey(key_id, requester)) => {
+			if !filter_task(
+				&current_set,
+				None,
+				&key_id,
+				None,
+				&mut service_data.recent_server_key_retrieval_sessions,
+			) {
+				return None;
+			}
+
 			let future_environment = future_environment.clone();
-			let future_service_data = future_service_data.clone();
 			Some(Either::Right(Either::Left(
 				ready({
 					let key_share = future_environment.key_storage.get(&key_id);
@@ -386,53 +395,70 @@ fn process_task<E, TP, KSrv, KStr>(
 		},
 		BlockchainServiceTask::Regular(
 			origin,
-			ServiceTask::StoreDocumentKey(key_id, requester, common_point, encrypted_point),
+			ServiceTask::StoreDocumentKey(key_id, author, common_point, encrypted_point),
 		) => {
 			if !filter_task(
 				&current_set,
-				&future_environment.self_id,
+				None,
 				&key_id,
-				&mut service_data.document_key_store_sessions,
+				None,
 				&mut service_data.recent_document_key_store_sessions,
 			) {
 				return None;
 			}
 
-			let future_environment = future_environment.clone();
-			let future_service_data = future_service_data.clone();
-			Some(Either::Right(Either::Right(Either::Left(
-				future_environment
-					.key_server
-					.store_document_key(Some(origin), key_id, requester, common_point, encrypted_point)
-					.map(move |result| {
-						future_service_data.write().document_key_store_sessions.remove(&key_id);
 
-						match result.result {
-							Ok(_) => future_environment.transaction_pool.publish_stored_document_key(
+			let future_environment = future_environment.clone();
+			Some(Either::Right(Either::Right(Either::Left(
+				ready({
+					let store_result = future_environment.key_storage.get(&key_id)
+						.and_then(|key_share| key_share.ok_or(Error::ServerKeyIsNotFound))
+						.and_then(|key_share| {
+							// check that common_point and encrypted_point are still not set yet
+							if key_share.common_point.is_some() || key_share.encrypted_point.is_some() {
+								return Err(Error::DocumentKeyAlreadyStored);
+							}
+
+							Ok(key_share)
+						})
+						.and_then(|mut key_share| {
+							// author must be the same
+							if key_share.author != author.address(&key_id)? {
+								return Err(Error::AccessDenied);
+							}
+
+							// save encryption data
+							key_share.common_point = Some(common_point);
+							key_share.encrypted_point = Some(encrypted_point);
+							future_environment.key_storage.update(key_id, key_share)
+						});
+
+					match store_result {
+						Ok(_) => future_environment.transaction_pool.publish_stored_document_key(
+							origin,
+							key_id,
+						),
+						Err(error) if error.is_non_fatal() => {
+							log_nonfatal_secret_store_error(&format!("StoreDocumentKey({})", key_id), error);
+						},
+						Err(error) => {
+							log_fatal_secret_store_error(&format!("StoreDocumentKey({})", key_id), error);
+							future_environment.transaction_pool.publish_document_key_store_error(
 								origin,
-								result.params.key_id,
-							),
-							Err(error) if error.is_non_fatal() => {
-								log_nonfatal_secret_store_error(&format!("StoreDocumentKey({})", result.params.key_id), error);
-							},
-							Err(error) => {
-								log_fatal_secret_store_error(&format!("StoreDocumentKey({})", result.params.key_id), error);
-								future_environment.transaction_pool.publish_document_key_store_error(
-									origin,
-									result.params.key_id,
-								);
-							},
-						}
-					})
+								key_id,
+							);
+						},
+					}
+				})
 			))))
 		},
 		BlockchainServiceTask::RetrieveShadowDocumentKeyCommon(origin, key_id, requester) => {
 			if !filter_document_task(
 				&current_set,
-				&future_environment.self_id,
+				Some(&future_environment.self_id),
 				&key_id,
 				&requester,
-				&mut service_data.document_key_common_retrieval_sessions,
+				Some(&mut service_data.document_key_common_retrieval_sessions),
 				&mut service_data.recent_document_key_common_retrieval_sessions,
 			) {
 				return None;
@@ -490,10 +516,10 @@ fn process_task<E, TP, KSrv, KStr>(
 		BlockchainServiceTask::RetrieveShadowDocumentKeyPersonal(origin, key_id, requester) => {
 			if !filter_document_task(
 				&current_set,
-				&future_environment.self_id,
+				Some(&future_environment.self_id),
 				&key_id,
 				&requester,
-				&mut service_data.document_key_personal_retrieval_sessions,
+				Some(&mut service_data.document_key_personal_retrieval_sessions),
 				&mut service_data.recent_document_key_personal_retrieval_sessions,
 			) {
 				return None;
@@ -556,22 +582,26 @@ fn log_fatal_secret_store_error(request_type: &str, error: Error) {
 /// Returns true when session, related to `server_key_id` could be started now.
 fn filter_task(
 	current_set: &BTreeSet<KeyServerId>,
-	self_id: &KeyServerId,
+	self_id: Option<&KeyServerId>,
 	server_key_id: &ServerKeyId,
-	active_sessions: &mut HashSet<ServerKeyId>,
+	active_sessions: Option<&mut HashSet<ServerKeyId>>,
 	recent_sessions: &mut HashSet<ServerKeyId>,
 ) -> bool {
 	// check if task mus be procesed by another node
-	if !is_processed_by_this_key_server(current_set, self_id, server_key_id) {
-		return false;
+	if let Some(self_id) = self_id {
+		if !is_processed_by_this_key_server(current_set, self_id, server_key_id) {
+			return false;
+		}
 	}
 	// check if task has been completed recently
 	if !recent_sessions.insert(*server_key_id) {
 		return false;
 	}
 	// check if task is currently processed
-	if !active_sessions.insert(*server_key_id) {
-		return false;
+	if let Some(active_sessions) = active_sessions {
+		if !active_sessions.insert(*server_key_id) {
+			return false;
+		}
 	}
 
 	true
@@ -580,23 +610,27 @@ fn filter_task(
 /// Returns true when session, related to both `server_key_id` and `requester` could be started now.
 fn filter_document_task(
 	current_set: &BTreeSet<KeyServerId>,
-	self_id: &KeyServerId,
+	self_id: Option<&KeyServerId>,
 	server_key_id: &ServerKeyId,
 	requester: &Requester,
-	active_sessions: &mut HashSet<(ServerKeyId, Requester)>,
+	active_sessions: Option<&mut HashSet<(ServerKeyId, Requester)>>,
 	recent_sessions: &mut HashSet<(ServerKeyId, Requester)>,
 ) -> bool {
 	// check if task mus be procesed by another node
-	if !is_processed_by_this_key_server(current_set, self_id, server_key_id) {
-		return false;
+	if let Some(self_id) = self_id {
+		if !is_processed_by_this_key_server(current_set, self_id, server_key_id) {
+			return false;
+		}
 	}
 	// check if task has been completed recently
 	if !recent_sessions.insert((*server_key_id, requester.clone())) {
 		return false;
 	}
 	// check if task is currently processed
-	if !active_sessions.insert((*server_key_id, requester.clone())) {
-		return false;
+	if let Some(active_sessions) = active_sessions {
+		if !active_sessions.insert((*server_key_id, requester.clone())) {
+			return false;
+		}
 	}
 
 	true

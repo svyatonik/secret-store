@@ -65,7 +65,15 @@ impl<B, P> SubstrateTransactionPool<B, P>
 	) {
 		match is_response_required() {
 			Ok(true) => (),
-			Ok(false) => return,
+			Ok(false) => {
+				trace!(
+					target: "secretstore",
+					"Response {} is not required. Transaction is not submitted.",
+					format_request(),
+				);
+
+				return
+			},
 			Err(error) => error!(
 				target: "secretstore",
 				"Failed to check if response {} is required: {}",

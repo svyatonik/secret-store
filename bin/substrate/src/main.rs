@@ -105,9 +105,11 @@ fn main() {
 		);
 
 		// BEGIN OF TEST CODE: UI fails to accept txs which accept KeyServerId => this test code
+		let mut total_finalized_headers = 0;
 		let cclient = client.clone();
 		let cthread_pool = thread_pool.clone();
 		let key_id = Random.generate().unwrap().secret().deref().as_fixed_bytes().into();
+		let mut generation_tx_submitted = false;
 		let submit_generation_tx = move || {
 			let cclient = cclient.clone();
 			cthread_pool.spawn_ok(async move {
@@ -124,6 +126,7 @@ fn main() {
 		};
 		let cclient = client.clone();
 		let cthread_pool = thread_pool.clone();
+		let mut retrieval_tx_submitted = false;
 		let submit_retrieval_tx = move || {
 			let cclient = cclient.clone();
 			cthread_pool.spawn_ok(async move {
@@ -132,6 +135,24 @@ fn main() {
 					node_runtime::Call::SecretStore(
 						node_runtime::SecretStoreCall::retrieve_server_key(
 							key_id,
+						),
+					)
+				).await;
+			});
+		};
+		let cclient = client.clone();
+		let cthread_pool = thread_pool.clone();
+		let mut store_tx_submitted = false;
+		let submit_store_tx = move || {
+			let cclient = cclient.clone();
+			cthread_pool.spawn_ok(async move {
+				let mut tx_submitted = false;
+				let tx_hash = cclient.submit_transaction(
+					node_runtime::Call::SecretStore(
+						node_runtime::SecretStoreCall::store_document_key(
+							key_id,
+							Random.generate().unwrap().public().deref().as_fixed_bytes().into(),
+							Random.generate().unwrap().public().deref().as_fixed_bytes().into(),
 						),
 					)
 				).await;
@@ -160,11 +181,24 @@ fn main() {
 
 
 					// === TEST CODE ===
-					if finalized_headers.len() == 5 {
-						submit_generation_tx();
+					total_finalized_headers += 1;
+					if total_finalized_headers > 10 {
+						if !generation_tx_submitted {
+							generation_tx_submitted = true;
+							submit_generation_tx();
+						}
 					}
-					if finalized_headers.len() == 10 {
-						submit_retrieval_tx();
+					if total_finalized_headers > 20 {
+						if !retrieval_tx_submitted {
+							retrieval_tx_submitted = true;
+							submit_retrieval_tx();
+						}
+					}
+					if total_finalized_headers > 30 {
+						if !store_tx_submitted {
+							store_tx_submitted = true;
+							submit_store_tx();
+						}
 					}
 					// =================
 				},

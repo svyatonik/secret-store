@@ -172,8 +172,7 @@ impl Blockchain for SecretStoreBlockchain {
 		block_hash: Self::BlockHash,
 		range: Range<usize>,
 	) -> Result<Self::PendingEvents, String> {
-		Ok(Vec::new())
-//		self.pending_tasks(block_hash, "SecretStoreServiceApi_document_key_store_tasks", range)
+		self.pending_tasks(block_hash, "SecretStoreServiceApi_document_key_store_tasks", range)
 	}
 
 	fn is_document_key_store_response_required(
@@ -256,6 +255,28 @@ impl MaybeSecretStoreEvent for SubstrateServiceTaskWrapper {
 				origin,
 				ServiceTask::RetrieveServerKey(
 					key_id, None,
+				)
+			)),
+			SubstrateServiceTaskWrapper::Event(
+				crate::runtime::Event::substrate_secret_store_runtime(
+					substrate_secret_store_runtime::Event::DocumentKeyStoreRequested(
+						key_id, author, common_point, encrypted_point,
+					),
+				)
+			) => Some(BlockchainServiceTask::Regular(
+				origin,
+				ServiceTask::StoreDocumentKey(
+					key_id, Requester::Address(author), common_point, encrypted_point,
+				)
+			)),
+			SubstrateServiceTaskWrapper::Task(
+				ss_primitives::service::ServiceTask::StoreDocumentKey(
+					key_id, author, common_point, encrypted_point,
+				)
+			) => Some(BlockchainServiceTask::Regular(
+				origin,
+				ServiceTask::StoreDocumentKey(
+					key_id, Requester::Address(author), common_point, encrypted_point,
 				)
 			)),
 			_ => None,
