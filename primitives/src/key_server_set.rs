@@ -30,18 +30,20 @@ pub type MigrationId = H256;
 pub struct KeyServerSetSnapshot<Address> {
 	/// Current set of key servers.
 	pub current_set: BTreeMap<KeyServerId, Address>,
-	/// New set of key servers.
+	/// New set of key servers. If it differs from the current set, then
+	/// the migration should be started.
 	pub new_set: BTreeMap<KeyServerId, Address>,
-	/// Current migration data.
+	/// Current migration data. None if migration isn't started.
 	pub migration: Option<KeyServerSetMigration<Address>>,
 }
 
-/// Key server set migration.
+/// Key Server set migration.
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct KeyServerSetMigration<Address> {
 	/// Migration id.
 	pub id: MigrationId,
-	/// Migration set of key servers. It is the new_set at the moment of migration start.
+	/// Migration set of key servers. It is the new_set at the moment when
+	/// migration has been started.
 	pub set: BTreeMap<KeyServerId, Address>,
 	/// Master node of the migration process.
 	pub master: KeyServerId,

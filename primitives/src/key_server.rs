@@ -1,18 +1,18 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
@@ -24,7 +24,8 @@ use crate::{
 	requester::Requester,
 };
 
-/// Session origin.
+/// Session origin. Origin can be used by some services if they're working with
+/// several endpoints (like ethereum service could listen to several contracts).
 pub type Origin = H160;
 
 /// Session result.
@@ -33,7 +34,7 @@ pub struct SessionResult<P, R> {
 	pub origin: Option<Origin>,
 	/// Session parameters.
 	pub params: P,
-	/// Actualy result.
+	/// Actual result.
 	pub result: Result<R, Error>,
 }
 

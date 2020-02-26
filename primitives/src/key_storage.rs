@@ -30,9 +30,9 @@ pub struct KeyShare {
 	pub threshold: usize,
 	/// Server public key.
 	pub public: Public,
-	/// Common (shared) encryption point.
+	/// Doument key: common (shared) encryption point.
 	pub common_point: Option<Public>,
-	/// Encrypted point.
+	/// Doument key: encrypted point.
 	pub encrypted_point: Option<Public>,
 	/// Key share versions.
 	pub versions: Vec<KeyShareVersion>,
@@ -45,7 +45,7 @@ pub struct KeyShareVersion {
 	pub hash: H256,
 	/// Nodes ids numbers.
 	pub id_numbers: BTreeMap<KeyServerId, Secret>,
-	/// Node secret share.
+	/// Secret share of secret portion of server key, valid within this version.
 	pub secret_share: Secret,
 }
 

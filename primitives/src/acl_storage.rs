@@ -21,7 +21,7 @@ use crate::{ServerKeyId, error::Error};
 
 /// ACL storage of Secret Store.
 pub trait AclStorage: Send + Sync {
-	/// Check if ownere of `requester_address` can run any operations that are
+	/// Check if owner of `requester_address` can run any operations that are
 	/// touching private data associated with given server key.
 	///
 	/// The private data is either private portion of server key, or document
