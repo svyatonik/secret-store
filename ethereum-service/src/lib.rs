@@ -27,6 +27,7 @@ use parity_secretstore_primitives::{
 	error::Error,
 	executor::Executor,
 	key_server::KeyServer,
+	key_storage::KeyStorage,
 	service::ServiceTasksListenerRegistrar,
 };
 use crate::{
@@ -130,8 +131,9 @@ struct EthereumBlock<B> {
 }
 
 /// Start listening requests from given contract.
-pub async fn start_service<B, E, TP, KS, LR>(
-	key_server: Arc<KS>,
+pub async fn start_service<B, E, TP, KSrv, KStr, LR>(
+	key_server: Arc<KSrv>,
+	key_storage: Arc<KStr>,
 	listener_registrar: Arc<LR>,
 	blockchain: Arc<B>,
 	executor: Arc<E>,
@@ -143,7 +145,8 @@ pub async fn start_service<B, E, TP, KS, LR>(
 	E: Executor,
 	TP: TransactionPool,
 	LR: ServiceTasksListenerRegistrar + 'static,
-	KS: KeyServer,
+	KSrv: KeyServer,
+	KStr: KeyStorage,
 {
 	let topics_filter = Arc::new(prepare_topics_filter(&config));
 	let config = Arc::new(config);
@@ -155,6 +158,7 @@ pub async fn start_service<B, E, TP, KS, LR>(
 	));
 	parity_secretstore_blockchain_service::start_service(
 		key_server,
+		key_storage,
 		listener_registrar,
 		executor,
 		transaction_pool,
