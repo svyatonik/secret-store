@@ -16,7 +16,7 @@
 
 use std::collections::BTreeSet;
 use hyper::Method;
-use parity_secretstore_primitives::{service::ServiceTask, requester::Requester, serialization::SerializablePublic};
+use primitives::{service::ServiceTask, requester::Requester, serialization::SerializablePublic};
 use crate::{DecomposedRequest, Error};
 
 pub fn parse_http_request(request: &DecomposedRequest) -> Result<ServiceTask, Error> {
@@ -106,7 +106,7 @@ mod tests {
 	use std::str::FromStr;
 	use assert_matches::assert_matches;
 	use hyper::Uri;
-	use parity_secretstore_primitives::ServerKeyId;
+	use primitives::ServerKeyId;
 	use super::*;
 
 	const KEY_ID_ENCODED: &'static str = "%30000000000000000000000000000000000000000000000000000000000000001";

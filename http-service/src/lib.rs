@@ -24,7 +24,7 @@ use hyper::{
 use jsonrpc_server_utils::cors::{self, AllowCors, AccessControlAllowOrigin};
 use log::error;
 use serde::Serialize;
-use parity_secretstore_primitives::{
+use primitives::{
 	Public, ecies_encrypt,
 	error::Error as SecretStoreError,
 	key_server::{DocumentKeyStoreArtifacts, DocumentKeyShadowRetrievalArtifacts, KeyServer},
@@ -39,18 +39,20 @@ type CorsDomains = Option<Vec<AccessControlAllowOrigin>>;
 /// All possible errors.
 #[derive(Debug)]
 pub enum Error {
-	/// Request has failed 
+	/// Invalid listen address.
+	InvalidListenAddress(String),
+	/// Request has failed because of unauthorized Origin header.
 	InvalidCors,
-	///
+	/// Failed to parse HTTP request.
 	InvalidRequest,
 	/// Error from Hyper.
 	Hyper(hyper::Error),
 	/// Error from Secret Store.
-	SecretStore(parity_secretstore_primitives::error::Error),
+	SecretStore(SecretStoreError),
 }
 
 /// Decomposed HTTP request.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct DecomposedRequest {
 	/// Request URI.
 	pub uri: Uri,
@@ -74,8 +76,9 @@ pub async fn start_service<KS: KeyServer>(
 	let cors = Arc::new(cors);
 	let http_address = format!("{}:{}", listen_address, listen_port)
 		.parse()
-		.map_err(|err: std::net::AddrParseError| Error::SecretStore(err.into()))?;
-	let http_server = Server::bind(&http_address);
+		.map_err(|err: std::net::AddrParseError| Error::InvalidListenAddress(format!("{}", err)))?;
+	let http_server = Server::try_bind(&http_address)
+		.map_err(|err| Error::InvalidListenAddress(format!("{}", err)))?;
 	let http_service_fn = make_service_fn(move |_| {
 		let key_server = key_server.clone();
 		let cors = cors.clone();
@@ -99,11 +102,22 @@ async fn serve_http_request<KS: KeyServer>(
 	key_server: Arc<KS>,
 	cors_domains: Arc<CorsDomains>,
 ) -> Result<Response<Body>, hyper::Error> {
-	let decomposed_request = match decompose_http_request(http_request).await {
-		Ok(decomposed_request) => decomposed_request,
+	match decompose_http_request(http_request).await {
+		Ok(decomposed_request) => serve_decomposed_http_request(
+			decomposed_request,
+			key_server,
+			cors_domains,
+		).await,
 		Err(error) => return Ok(return_error(error)),
-	};
+	}
+}
 
+/// Serve single decomposed HTTP request.
+async fn serve_decomposed_http_request<KS: KeyServer>(
+	decomposed_request: DecomposedRequest,
+	key_server: Arc<KS>,
+	cors_domains: Arc<CorsDomains>,
+) -> Result<Response<Body>, hyper::Error> {
 	let allow_cors = match ensure_cors(&decomposed_request, cors_domains) {
 		Ok(allow_cors) => allow_cors,
 		Err(error) => return Ok(return_error(error)),
@@ -114,6 +128,21 @@ async fn serve_http_request<KS: KeyServer>(
 		Err(error) => return Ok(return_error(error)),
 	};
 
+	serve_service_task(
+		decomposed_request,
+		key_server,
+		allow_cors,
+		service_task,
+	).await
+}
+
+/// Serve single service task.
+async fn serve_service_task<KS: KeyServer>(
+	decomposed_request: DecomposedRequest,
+	key_server: Arc<KS>,
+	allow_cors: AllowCors<AccessControlAllowOrigin>,
+	service_task: ServiceTask,
+) -> Result<Response<Body>, hyper::Error> {
 	let log_secret_store_error = |error| {
 		error!(
 			target: "secretstore",
@@ -459,10 +488,386 @@ fn return_error(err: Error) -> Response<Body> {
 impl std::fmt::Display for Error {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
 		match *self {
+			Error::InvalidListenAddress(ref msg) => write!(f, "Invalid listen address: {}", msg),
 			Error::InvalidCors => write!(f, "Request with unauthorized Origin header"),
 			Error::InvalidRequest => write!(f, "Failed to parse request"),
 			Error::Hyper(ref error) => write!(f, "Internal server error: {}", error),
 			Error::SecretStore(ref error) => write!(f, "Secret store error: {}", error),
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use assert_matches::assert_matches;
+	use primitives::{requester::Requester, key_server::AccumulatingKeyServer};
+	use super::*;
+
+	fn default_decomposed_request() -> DecomposedRequest {
+		DecomposedRequest {
+			uri: "http://some-uri/generate-server-key".parse().unwrap(),
+			method: Method::POST,
+			header_origin: Some("some-origin".into()),
+			header_host: Some("some-host".into()),
+			body: "Hello, world!".bytes().collect(),
+		}
+	}
+
+	fn assert_access_denied_response(response: Response<Body>) {
+		assert_eq!(response.status(), StatusCode::FORBIDDEN);
+		assert_eq!(
+			futures::executor::block_on(hyper::body::to_bytes(response.into_body())).unwrap(),
+			serde_json::to_vec(&format!("\"{}\"", Error::SecretStore(SecretStoreError::AccessDenied))).unwrap(),
+		);
+	}
+
+	#[test]
+	fn decompose_http_request_works() {
+		assert_eq!(
+			futures::executor::block_on(decompose_http_request(
+				Request::builder()
+					.uri("http://some-uri/generate-server-key")
+					.method(Method::POST)
+					.header(header::ORIGIN, "some-origin")
+					.header(header::HOST, "some-host")
+					.body(Body::wrap_stream(
+						futures::stream::iter(
+							vec![Result::<_, std::io::Error>::Ok("Hello, world!")],
+					)))
+					.unwrap()
+			)).unwrap(),
+			default_decomposed_request(),
+		);
+	}
+
+	#[test]
+	fn decompose_http_request_fails() {
+		assert_matches!(
+			futures::executor::block_on(decompose_http_request(
+				Request::builder()
+					.body(Body::wrap_stream(
+						futures::stream::iter(
+							vec![Result::<&'static str, _>::Err(
+								std::io::Error::new(std::io::ErrorKind::Other, "Test error"),
+							)],
+						)
+					))
+					.unwrap()
+			)),
+			Err(Error::Hyper(_))
+		);
+	}
+
+	#[test]
+	fn ensure_cors_works() {
+		let mut request = default_decomposed_request();
+		assert_matches!(ensure_cors(&request, Arc::new(None)), Ok(_));
+		request.header_origin = None;
+		assert_matches!(
+			ensure_cors(&request, Arc::new(Some(vec![AccessControlAllowOrigin::Null]))),
+			Ok(_)
+		);
+	}
+
+	#[test]
+	fn ensure_cors_fails() {
+		assert_matches!(
+			ensure_cors(
+				&default_decomposed_request(),
+				Arc::new(Some(vec![
+					AccessControlAllowOrigin::Value("xxx".into()),
+				])),
+			),
+			Err(Error::InvalidCors)
+		);
+	}
+
+	#[test]
+	fn return_empty_ok_works() {
+		let response = return_empty(
+			&default_decomposed_request(),
+			AllowCors::NotRequired,
+			Ok(()),
+		);
+		assert_eq!(response.status(), StatusCode::OK);
+		assert_eq!(
+			futures::executor::block_on(hyper::body::to_bytes(response.into_body())).unwrap(),
+			Vec::new(),
+		);
+	}
+
+	#[test]
+	fn return_empty_err_works() {
+		assert_access_denied_response(return_empty(
+			&default_decomposed_request(),
+			AllowCors::NotRequired,
+			Err(Error::SecretStore(SecretStoreError::AccessDenied)),
+		));
+	}
+
+	#[test]
+	fn return_unencrypted_server_key_ok_works() {
+		let response = return_unencrypted_server_key(
+			&default_decomposed_request(),
+			AllowCors::NotRequired,
+			Ok([1u8; 64].into()),
+		);
+		assert_eq!(response.status(), StatusCode::OK);
+		assert_eq!(
+			futures::executor::block_on(hyper::body::to_bytes(response.into_body())).unwrap(),
+			"\"0x01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101\"",
+		);
+	}
+
+	#[test]
+	fn return_unencrypted_server_key_err_works() {
+		assert_access_denied_response(return_unencrypted_server_key(
+			&default_decomposed_request(),
+			AllowCors::NotRequired,
+			Err(Error::SecretStore(SecretStoreError::AccessDenied)),
+		));
+	}
+
+	#[test]
+	fn return_encrypted_document_key_ok_works() {
+		let response = futures::executor::block_on(
+			return_encrypted_document_key(
+				&default_decomposed_request(),
+				AllowCors::NotRequired,
+				ready(Ok(vec![0x42])),
+			)
+		);
+		assert_eq!(response.status(), StatusCode::OK);
+		assert_eq!(
+			futures::executor::block_on(hyper::body::to_bytes(response.into_body())).unwrap(),
+			"\"0x42\"",
+		);
+	}
+
+	#[test]
+	fn return_encrypted_document_key_err_works() {
+		assert_access_denied_response(futures::executor::block_on(
+			return_encrypted_document_key(
+				&default_decomposed_request(),
+				AllowCors::NotRequired,
+				ready(Err(Error::SecretStore(SecretStoreError::AccessDenied))),
+			)
+		));
+	}
+
+	#[test]
+	fn return_document_key_shadow_ok_works() {
+		let response = return_document_key_shadow(
+			&default_decomposed_request(),
+			AllowCors::NotRequired,
+			Ok(DocumentKeyShadowRetrievalArtifacts {
+				common_point: [1u8; 64].into(),
+				threshold: 42,
+				encrypted_document_key: [2u8; 64].into(),
+				participants_coefficients: vec![
+					([1u8; 20].into(), vec![0x42]),
+					([2u8; 20].into(), vec![0x43]),
+				].into_iter().collect(),
+			}),
+		);
+		assert_eq!(response.status(), StatusCode::OK);
+		assert_eq!(
+			futures::executor::block_on(hyper::body::to_bytes(response.into_body())).unwrap(),
+			"{\
+				\"decrypted_secret\":\"0x02020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202\",\
+				\"common_point\":\"0x01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101\",\
+				\"decrypt_shadows\":[\"0x42\",\"0x43\"]\
+			}",
+		);
+	}
+
+	#[test]
+	fn return_document_key_shadow_err_works() {
+		assert_access_denied_response(return_document_key_shadow(
+			&default_decomposed_request(),
+			AllowCors::NotRequired,
+			Err(Error::SecretStore(SecretStoreError::AccessDenied)),
+		));
+	}
+
+	#[test]
+	fn return_encrypted_message_signature_ok_works() {
+		let response = futures::executor::block_on(
+			return_encrypted_message_signature(
+				&default_decomposed_request(),
+				AllowCors::NotRequired,
+				ready(Ok(vec![0x42])),
+			)
+		);
+		assert_eq!(response.status(), StatusCode::OK);
+		assert_eq!(
+			futures::executor::block_on(hyper::body::to_bytes(response.into_body())).unwrap(),
+			"\"0x42\"",
+		);
+	}
+
+	#[test]
+	fn return_encrypted_message_signature_err_works() {
+		assert_access_denied_response(futures::executor::block_on(
+			return_encrypted_message_signature(
+				&default_decomposed_request(),
+				AllowCors::NotRequired,
+				ready(Err(Error::SecretStore(SecretStoreError::AccessDenied))),
+			)
+		));
+	}
+
+	#[test]
+	fn serve_decomposed_http_request_schedules_generate_server_key_request() {
+		let key_server = Arc::new(AccumulatingKeyServer::default());
+		let service_task = ServiceTask::GenerateServerKey(
+			[1u8; 32].into(),
+			Requester::Address([2u8; 20].into()),
+			42,
+		);
+		futures::executor::block_on(serve_service_task(
+			default_decomposed_request(),
+			key_server.clone(),
+			AllowCors::NotRequired,
+			service_task.clone(),
+		)).unwrap();
+		assert_eq!(key_server.accumulated_tasks(), vec![service_task]);
+	}
+
+	#[test]
+	fn serve_decomposed_http_request_schedules_retrieve_server_key_request() {
+		let key_server = Arc::new(AccumulatingKeyServer::default());
+		let service_task = ServiceTask::RetrieveServerKey(
+			[1u8; 32].into(),
+			Some(Requester::Address([2u8; 20].into())),
+		);
+		futures::executor::block_on(serve_service_task(
+			default_decomposed_request(),
+			key_server.clone(),
+			AllowCors::NotRequired,
+			service_task.clone(),
+		)).unwrap();
+		assert_eq!(key_server.accumulated_tasks(), vec![service_task]);
+	}
+
+	#[test]
+	fn serve_decomposed_http_request_schedules_generate_document_key_request() {
+		let key_server = Arc::new(AccumulatingKeyServer::default());
+		let service_task = ServiceTask::GenerateDocumentKey(
+			[1u8; 32].into(),
+			Requester::Public([2u8; 64].into()),
+			42,
+		);
+		futures::executor::block_on(serve_service_task(
+			default_decomposed_request(),
+			key_server.clone(),
+			AllowCors::NotRequired,
+			service_task.clone(),
+		)).unwrap();
+		assert_eq!(key_server.accumulated_tasks(), vec![service_task]);
+	}
+
+	#[test]
+	fn serve_decomposed_http_request_schedules_store_document_key_request() {
+		let key_server = Arc::new(AccumulatingKeyServer::default());
+		let service_task = ServiceTask::StoreDocumentKey(
+			[1u8; 32].into(),
+			Requester::Public([2u8; 64].into()),
+			[3u8; 64].into(),
+			[4u8; 64].into(),
+		);
+		futures::executor::block_on(serve_service_task(
+			default_decomposed_request(),
+			key_server.clone(),
+			AllowCors::NotRequired,
+			service_task.clone(),
+		)).unwrap();
+		assert_eq!(key_server.accumulated_tasks(), vec![service_task]);
+	}
+
+	#[test]
+	fn serve_decomposed_http_request_schedules_retrieve_document_key_request() {
+		let key_server = Arc::new(AccumulatingKeyServer::default());
+		let service_task = ServiceTask::RetrieveDocumentKey(
+			[1u8; 32].into(),
+			Requester::Public([2u8; 64].into()),
+		);
+		futures::executor::block_on(serve_service_task(
+			default_decomposed_request(),
+			key_server.clone(),
+			AllowCors::NotRequired,
+			service_task.clone(),
+		)).unwrap();
+		assert_eq!(key_server.accumulated_tasks(), vec![service_task]);
+	}
+
+	#[test]
+	fn serve_decomposed_http_request_schedules_retrieve_document_key_shadow_request() {
+		let key_server = Arc::new(AccumulatingKeyServer::default());
+		let service_task = ServiceTask::RetrieveShadowDocumentKey(
+			[1u8; 32].into(),
+			Requester::Public([2u8; 64].into()),
+		);
+		futures::executor::block_on(serve_service_task(
+			default_decomposed_request(),
+			key_server.clone(),
+			AllowCors::NotRequired,
+			service_task.clone(),
+		)).unwrap();
+		assert_eq!(key_server.accumulated_tasks(), vec![service_task]);
+	}
+
+	#[test]
+	fn serve_decomposed_http_request_schedules_schnorr_sign_message_request() {
+		let key_server = Arc::new(AccumulatingKeyServer::default());
+		let service_task = ServiceTask::SchnorrSignMessage(
+			[1u8; 32].into(),
+			Requester::Public([2u8; 64].into()),
+			[3u8; 32].into(),
+		);
+		futures::executor::block_on(serve_service_task(
+			default_decomposed_request(),
+			key_server.clone(),
+			AllowCors::NotRequired,
+			service_task.clone(),
+		)).unwrap();
+		assert_eq!(key_server.accumulated_tasks(), vec![service_task]);
+	}
+
+	#[test]
+	fn serve_decomposed_http_request_schedules_ecdsa_sign_message_request() {
+		let key_server = Arc::new(AccumulatingKeyServer::default());
+		let service_task = ServiceTask::EcdsaSignMessage(
+			[1u8; 32].into(),
+			Requester::Public([2u8; 64].into()),
+			[3u8; 32].into(),
+		);
+		futures::executor::block_on(serve_service_task(
+			default_decomposed_request(),
+			key_server.clone(),
+			AllowCors::NotRequired,
+			service_task.clone(),
+		)).unwrap();
+		assert_eq!(key_server.accumulated_tasks(), vec![service_task]);
+	}
+
+	#[test]
+	fn serve_decomposed_http_request_schedules_change_servers_set_request() {
+		let key_server = Arc::new(AccumulatingKeyServer::default());
+		let service_task = ServiceTask::ChangeServersSet(
+			[1u8; 65].into(),
+			[2u8; 65].into(),
+			vec![
+				[3u8; 64].into(),
+				[4u8; 64].into(),
+			].into_iter().collect(),
+		);
+		futures::executor::block_on(serve_service_task(
+			default_decomposed_request(),
+			key_server.clone(),
+			AllowCors::NotRequired,
+			service_task.clone(),
+		)).unwrap();
+		assert_eq!(key_server.accumulated_tasks(), vec![service_task]);
 	}
 }
