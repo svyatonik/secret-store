@@ -191,8 +191,7 @@ impl Blockchain for SecretStoreBlockchain {
 		block_hash: Self::BlockHash,
 		range: Range<usize>,
 	) -> Result<Self::PendingEvents, String> {
-		Ok(Vec::new())
-//		self.pending_tasks(block_hash, "SecretStoreServiceApi_document_key_shadow_retrieval_tasks", range)
+		self.pending_tasks(block_hash, "SecretStoreServiceApi_document_key_shadow_retrieval_tasks", range)
 	}
 
 	fn is_document_key_shadow_retrieval_response_required(
@@ -278,6 +277,46 @@ impl MaybeSecretStoreEvent for SubstrateServiceTaskWrapper {
 				ServiceTask::StoreDocumentKey(
 					key_id, Requester::Address(author), common_point, encrypted_point,
 				)
+			)),
+			SubstrateServiceTaskWrapper::Event(
+				crate::runtime::Event::substrate_secret_store_runtime(
+					substrate_secret_store_runtime::Event::DocumentKeyShadowRetrievalRequested(
+						key_id, requester_address,
+					),
+				)
+			) => Some(BlockchainServiceTask::RetrieveShadowDocumentKeyCommon(
+				origin,
+				key_id,
+				Requester::Address(requester_address),
+			)),
+			SubstrateServiceTaskWrapper::Task(
+				ss_primitives::service::ServiceTask::RetrieveShadowDocumentKeyCommon(
+					key_id, requester_address,
+				)
+			) => Some(BlockchainServiceTask::RetrieveShadowDocumentKeyCommon(
+				origin,
+				key_id,
+				Requester::Address(requester_address),
+			)),
+			SubstrateServiceTaskWrapper::Event(
+				crate::runtime::Event::substrate_secret_store_runtime(
+					substrate_secret_store_runtime::Event::DocumentKeyPersonalRetrievalRequested(
+						key_id, requester_public,
+					),
+				)
+			) => Some(BlockchainServiceTask::RetrieveShadowDocumentKeyPersonal(
+				origin,
+				key_id,
+				Requester::Public(requester_public),
+			)),
+			SubstrateServiceTaskWrapper::Task(
+				ss_primitives::service::ServiceTask::RetrieveShadowDocumentKeyPersonal(
+					key_id, requester_public,
+				)
+			) => Some(BlockchainServiceTask::RetrieveShadowDocumentKeyPersonal(
+				origin,
+				key_id,
+				Requester::Public(requester_public),
 			)),
 			_ => None,
 		}

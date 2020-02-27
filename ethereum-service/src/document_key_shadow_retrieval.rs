@@ -229,7 +229,7 @@ impl DocumentKeyShadowRetrievalService {
 		contract_address: &Address,
 		participant: &Address,
 	) -> Result<u8, String> {
-		// we're checking confirmation in Latest block, because tx ,ust be appended to the latest state
+		// we're checking confirmation in Latest block, because tx is applied to the latest state
 		let (encoded, decoder) = service::functions::require_key_server::call(*participant);
 		let index = decoder.decode(&blockchain.contract_call(BlockId::Best, *contract_address, encoded)?)
 			.map_err(|e| e.to_string())?;

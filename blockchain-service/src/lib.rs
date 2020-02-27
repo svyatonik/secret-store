@@ -351,7 +351,9 @@ fn process_task<E, TP, KSrv, KStr>(
 					})
 			))
 		},
-		BlockchainServiceTask::Regular(origin, ServiceTask::RetrieveServerKey(key_id, requester)) => {
+		BlockchainServiceTask::Regular(origin, ServiceTask::RetrieveServerKey(key_id, _requester)) => {
+			// in blockchain services we ignore requesters for RetrieveServerKey requests
+			// (i.e. public portion of server key is available to anyone)
 			if !filter_task(
 				&current_set,
 				None,
