@@ -9,5 +9,8 @@ edition = "2018"
 ethereum-types = "0.8"
 futures = "0.3"
 log = "0.4"
-parity-secretstore-primitives = { path = "../primitives" }
+primitives = { package = "parity-secretstore-primitives", path = "../primitives" }
 parking_lot = "0.10"
+
+[dev-dependencies]
+primitives = { package = "parity-secretstore-primitives", path = "../primitives", features = ["test-helpers"] }

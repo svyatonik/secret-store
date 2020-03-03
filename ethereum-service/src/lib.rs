@@ -199,7 +199,7 @@ impl<B: Blockchain> parity_secretstore_blockchain_service::Block for EthereumBlo
 	type NewBlocksIterator = Box<dyn Iterator<Item = BlockchainServiceTask>>;
 	type PendingBlocksIterator = Box<dyn Iterator<Item = BlockchainServiceTask>>;
 
-	fn new_tasks(&mut self) -> Self::NewBlocksIterator {
+	fn new_tasks(&self) -> Self::NewBlocksIterator {
 		let config = self.config.clone();
 		let contract_address = match self.read_contract_address() {
 			Some(contract_address) => contract_address,
@@ -222,7 +222,7 @@ impl<B: Blockchain> parity_secretstore_blockchain_service::Block for EthereumBlo
 		)
 	}
 
-	fn pending_tasks(&mut self) -> Self::PendingBlocksIterator {
+	fn pending_tasks(&self) -> Self::PendingBlocksIterator {
 		let contract_address = match self.read_contract_address() {
 			Some(contract_address) => contract_address,
 			None => return Box::new(std::iter::empty()),
@@ -266,7 +266,7 @@ impl<B: Blockchain> parity_secretstore_blockchain_service::Block for EthereumBlo
 		)
 	}
 
-	fn current_key_servers_set(&mut self) -> BTreeSet<KeyServerId> {
+	fn current_key_servers_set(&self) -> BTreeSet<KeyServerId> {
 		self.blockchain.current_key_servers_set()
 	}
 }

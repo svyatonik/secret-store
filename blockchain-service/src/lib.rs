@@ -23,7 +23,7 @@ use log::{error, warn};
 use parking_lot::RwLock;
 use ethereum_types::{U256, BigEndianHash};
 
-use parity_secretstore_primitives::{
+use primitives::{
 	KeyServerId, ServerKeyId,
 	error::Error,
 	executor::Executor,
@@ -38,7 +38,11 @@ use parity_secretstore_primitives::{
 };
 
 /// Blockchain service tasks.
+///
+/// It is ServiceTask extended with `Origin` (which currently only makes sense
+/// for blockchain services) and some blockchain-specific tasks.
 #[derive(Debug)]
+#[cfg_attr(test, derive(Clone))]
 pub enum BlockchainServiceTask {
 	/// Regular service task.
 	Regular(Origin, ServiceTask),
@@ -51,16 +55,16 @@ pub enum BlockchainServiceTask {
 /// Block API.
 pub trait Block: Send + Sync {
 	/// New blocks iterator.
-	type NewBlocksIterator: Iterator<Item = BlockchainServiceTask>;
+	type NewBlocksIterator: IntoIterator<Item = BlockchainServiceTask>;
 	/// Pending tasks iterator.
-	type PendingBlocksIterator: Iterator<Item = BlockchainServiceTask>;
+	type PendingBlocksIterator: IntoIterator<Item = BlockchainServiceTask>;
 
 	/// Get all new service tasks from this block.
-	fn new_tasks(&mut self) -> Self::NewBlocksIterator;
+	fn new_tasks(&self) -> Self::NewBlocksIterator;
 	/// Get all pending service tasks at this block.
-	fn pending_tasks(&mut self) -> Self::PendingBlocksIterator;
+	fn pending_tasks(&self) -> Self::PendingBlocksIterator;
 	/// Returns current key server set at this block.
-	fn current_key_servers_set(&mut self) -> BTreeSet<KeyServerId>;
+	fn current_key_servers_set(&self) -> BTreeSet<KeyServerId>;
 }
 
 /// Transaction pool API.
@@ -183,8 +187,41 @@ struct ServiceTasksListener<E, TP, KSrv, KStr> {
 	pub environment: Arc<Environment<E, TP, KSrv, KStr>>,
 }
 
-/// Start listening requests from given contract.
+/// Start listening requests from given blocks stream.
+///
+/// Blockchain service checks every block from the stream for new tasks and
+/// publishes responses using transaction pool. In addition, at given interval
+/// service checks for pending tasks (that have been missed or failed for some
+/// internal reason) and restarts them.
 pub async fn start_service<B, E, TP, KSrv, KStr>(
+	key_server: Arc<KSrv>,
+	key_storage: Arc<KStr>,
+	listener_registrar: Arc<dyn ServiceTasksListenerRegistrar>,
+	executor: Arc<E>,
+	transaction_pool: Arc<TP>,
+	config: Configuration,
+	new_blocks_stream: impl Stream<Item = B>,
+) -> Result<(), Error> where
+	B: Block,
+	E: Executor,
+	TP: TransactionPool,
+	KSrv: KeyServer,
+	KStr: KeyStorage,
+{
+	start_service_with_service_data(
+		Arc::new(RwLock::new(empty_service_data())),
+		key_server,
+		key_storage,
+		listener_registrar,
+		executor,
+		transaction_pool,
+		config,
+		new_blocks_stream,
+	).await
+}
+
+async fn start_service_with_service_data<B, E, TP, KSrv, KStr>(
+	service_data: Arc<RwLock<ServiceData>>,
 	key_server: Arc<KSrv>,
 	key_storage: Arc<KStr>,
 	listener_registrar: Arc<dyn ServiceTasksListenerRegistrar>,
@@ -206,26 +243,13 @@ pub async fn start_service<B, E, TP, KSrv, KStr>(
 		key_server,
 		key_storage,
 	});
-	let service_data = Arc::new(RwLock::new(ServiceData {
-		last_restart_time: Instant::now(),
-		server_key_generation_sessions: HashSet::new(),
-		recent_server_key_generation_sessions: HashSet::new(),
-		server_key_retrieval_sessions: HashSet::new(),
-		recent_server_key_retrieval_sessions: HashSet::new(),
-		document_key_store_sessions: HashSet::new(),
-		recent_document_key_store_sessions: HashSet::new(),
-		document_key_common_retrieval_sessions: HashSet::new(),
-		recent_document_key_common_retrieval_sessions: HashSet::new(),
-		document_key_personal_retrieval_sessions: HashSet::new(),
-		recent_document_key_personal_retrieval_sessions: HashSet::new(),
-	}));
 
 	listener_registrar.register_listener(Arc::new(ServiceTasksListener {
 		environment: environment.clone(),
 	}));
 
 	new_blocks_stream
-		.for_each(|mut block| {
+		.for_each(|block| {
 			// we do not want to overload Secret Store, so let's limit number of possible active sessions
 			let future_service_data = service_data.clone();
 			let mut service_data = service_data.write();
@@ -249,7 +273,7 @@ pub async fn start_service<B, E, TP, KSrv, KStr>(
 				&environment,
 				&future_service_data,
 				&current_set,
-				block.new_tasks().take(max_additional_sessions),
+				block.new_tasks().into_iter().take(max_additional_sessions),
 				&mut service_data,
 			);
 
@@ -262,7 +286,7 @@ pub async fn start_service<B, E, TP, KSrv, KStr>(
 						&environment,
 						&future_service_data,
 						&current_set,
-						block.pending_tasks().take(max_additional_sessions),
+						block.pending_tasks().into_iter().take(max_additional_sessions),
 						&mut service_data,
 					);
 
@@ -462,7 +486,7 @@ fn process_task<E, TP, KSrv, KStr>(
 		BlockchainServiceTask::RetrieveShadowDocumentKeyCommon(origin, key_id, requester) => {
 			if !filter_document_task(
 				&current_set,
-				Some(&future_environment.self_id),
+				None,
 				&key_id,
 				&requester,
 				Some(&mut service_data.document_key_common_retrieval_sessions),
@@ -685,7 +709,7 @@ impl ServiceData {
 // another service. So origin must be service_id + current origin
 
 impl<E, TP, KSrv, KStr>
-	parity_secretstore_primitives::service::ServiceTasksListener
+	primitives::service::ServiceTasksListener
 for
 	ServiceTasksListener<E, TP, KSrv, KStr>
 where
@@ -695,7 +719,6 @@ where
 	KStr: KeyStorage,
 {
 	fn server_key_generated(&self, result: ServerKeyGenerationResult) {
-println!("=== server_key_generated: {:?}", result.origin);
 		if let Some(origin) = result.origin {
 			match result.result {
 				Ok(artifacts) => self.environment.transaction_pool.publish_generated_server_key(
@@ -758,5 +781,623 @@ println!("=== server_key_generated: {:?}", result.origin);
 				}
 			}
 		}
+	}
+}
+
+
+fn empty_service_data() -> ServiceData {
+	ServiceData {
+		last_restart_time: Instant::now(),
+		server_key_generation_sessions: HashSet::new(),
+		recent_server_key_generation_sessions: HashSet::new(),
+		server_key_retrieval_sessions: HashSet::new(),
+		recent_server_key_retrieval_sessions: HashSet::new(),
+		document_key_store_sessions: HashSet::new(),
+		recent_document_key_store_sessions: HashSet::new(),
+		document_key_common_retrieval_sessions: HashSet::new(),
+		recent_document_key_common_retrieval_sessions: HashSet::new(),
+		document_key_personal_retrieval_sessions: HashSet::new(),
+		recent_document_key_personal_retrieval_sessions: HashSet::new(),
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use primitives::{
+		executor::tokio_runtime,
+		key_server::AccumulatingKeyServer,
+		key_storage::InMemoryKeyStorage,
+		service::ServiceTasksListener,
+	};
+	use super::*;
+
+	const REQUESTER1_ID: [u8; 20] = [1u8; 20];
+	const REQUESTER2_ID: [u8; 20] = [2u8; 20];
+
+	const KEY1_ID: [u8; 32] = [1u8; 32];
+	const KEY2_ID: [u8; 32] = [2u8; 32];
+	const KEY3_ID: [u8; 32] = [3u8; 32];
+
+	fn new_task() -> ServiceTask {
+		ServiceTask::GenerateServerKey(
+			KEY1_ID.into(),
+			Requester::Address(REQUESTER1_ID.into()),
+			8,
+		)
+	}
+
+	fn pending_task() -> ServiceTask {
+		ServiceTask::GenerateServerKey(
+			KEY2_ID.into(),
+			Requester::Address(REQUESTER1_ID.into()),
+			8,
+		)
+	}
+
+	fn server_key_retrieval_task() -> ServiceTask {
+		ServiceTask::RetrieveServerKey(
+			KEY1_ID.into(),
+			None,
+		)
+	}
+
+	fn document_key_store_task() -> ServiceTask {
+		ServiceTask::StoreDocumentKey(
+			KEY1_ID.into(),
+			Requester::Address(REQUESTER1_ID.into()),
+			[10u8; 64].into(),
+			[11u8; 64].into(),
+		)
+	}
+
+	fn document_key_shadow_retrieval_task() -> ServiceTask {
+		ServiceTask::RetrieveShadowDocumentKey(
+			KEY1_ID.into(),
+			Requester::Address(REQUESTER1_ID.into()),
+		)
+	}
+
+	#[derive(Default)]
+	struct TestListenerRegistrar(RwLock<usize>);
+
+	impl ServiceTasksListenerRegistrar for TestListenerRegistrar {
+		fn register_listener(&self, _listener: Arc<dyn ServiceTasksListener>) {
+			*self.0.write() += 1;
+		}
+	}
+
+	struct TestBlock {
+		key_servers_set: BTreeSet<KeyServerId>,
+		new_tasks: Vec<BlockchainServiceTask>,
+		pending_tasks: Vec<BlockchainServiceTask>,
+	}
+
+	impl Block for TestBlock {
+		type NewBlocksIterator = Vec<BlockchainServiceTask>;
+		type PendingBlocksIterator = Vec<BlockchainServiceTask>;
+
+		fn new_tasks(&self) -> Self::NewBlocksIterator {
+			self.new_tasks.clone()
+		}
+
+		fn pending_tasks(&self) -> Self::PendingBlocksIterator {
+			self.pending_tasks.clone()
+		}
+
+		fn current_key_servers_set(&self) -> BTreeSet<KeyServerId> {
+			self.key_servers_set.clone()
+		}
+	}
+
+	#[derive(Default)]
+	struct TestTransactionPool {
+		retrieved_server_keys: RwLock<Vec<ServerKeyId>>,
+		failed_retrieved_server_keys: RwLock<Vec<ServerKeyId>>,
+		stored_document_keys: RwLock<Vec<ServerKeyId>>,
+		failed_stored_document_keys: RwLock<Vec<ServerKeyId>>,
+	}
+
+	impl TransactionPool for TestTransactionPool {
+		fn publish_generated_server_key(
+			&self,
+			_origin: Origin,
+			_key_id: ServerKeyId,
+			_artifacts: ServerKeyGenerationArtifacts,
+		) { }
+
+		fn publish_server_key_generation_error(&self, _origin: Origin, _key_id: ServerKeyId) { }
+
+		fn publish_retrieved_server_key(
+			&self,
+			_origin: Origin,
+			key_id: ServerKeyId,
+			_artifacts: ServerKeyRetrievalArtifacts,
+		) {
+			self.retrieved_server_keys.write().push(key_id);
+		}
+
+		fn publish_server_key_retrieval_error(&self, _origin: Origin, key_id: ServerKeyId) {
+			self.failed_retrieved_server_keys.write().push(key_id)
+		}
+
+		fn publish_stored_document_key(&self, _origin: Origin, key_id: ServerKeyId) {
+			self.stored_document_keys.write().push(key_id);
+		}
+
+		fn publish_document_key_store_error(&self, _origin: Origin, key_id: ServerKeyId) {
+			self.failed_stored_document_keys.write().push(key_id)
+		}
+
+		fn publish_retrieved_document_key_common(
+			&self,
+			_origin: Origin,
+			_key_id: ServerKeyId,
+			_requester: Requester,
+			_artifacts: DocumentKeyCommonRetrievalArtifacts,
+		) { }
+
+		fn publish_document_key_common_retrieval_error(
+			&self,
+			_origin: Origin,
+			_key_id: ServerKeyId,
+			_requester: Requester,
+		) { }
+
+		fn publish_retrieved_document_key_personal(
+			&self,
+			_origin: Origin,
+			_key_id: ServerKeyId,
+			_requester: Requester,
+			_artifacts: DocumentKeyShadowRetrievalArtifacts,
+		) { }
+
+		fn publish_document_key_personal_retrieval_error(
+			&self,
+			_origin: Origin,
+			_key_id: ServerKeyId,
+			_requester: Requester,
+		) { }
+	}
+
+	const KEY_SERVER1_ID: [u8; 20] = REQUESTER1_ID;
+	const KEY_SERVER2_ID: [u8; 20] = [2u8; 20];
+	const KEY_SERVER100_ID: [u8; 20] = [2u8; 20];
+
+	fn default_key_storage() -> Arc<InMemoryKeyStorage> {
+		let key_storage = Arc::new(InMemoryKeyStorage::default());
+		key_storage.insert(
+			KEY1_ID.into(),
+			primitives::key_storage::KeyShare {
+				author: REQUESTER1_ID.into(),
+				..Default::default()
+			},
+		).unwrap();
+		key_storage
+	}
+
+	fn run_tasks_at_key_server_with_data(
+		key_server_id: KeyServerId,
+		service_data: Arc<RwLock<ServiceData>>,
+		key_storage: Arc<InMemoryKeyStorage>,
+		new_tasks: Vec<BlockchainServiceTask>,
+		pending_tasks: Vec<BlockchainServiceTask>,
+	) -> (Arc<AccumulatingKeyServer>, Arc<TestTransactionPool>) {
+		let key_server = Arc::new(AccumulatingKeyServer::default());
+		let listener_registrar = Arc::new(TestListenerRegistrar::default());
+		let transaction_pool = Arc::new(TestTransactionPool::default());
+		let blocks_stream = futures::stream::iter(vec![TestBlock {
+			key_servers_set: vec![
+				KEY_SERVER1_ID.into(),
+				KEY_SERVER2_ID.into(),
+			].into_iter().collect(),
+			new_tasks,
+			pending_tasks,
+		}]);
+		futures::executor::block_on(start_service_with_service_data(
+			service_data,
+			key_server.clone(),
+			key_storage,
+			listener_registrar.clone(),
+			Arc::new(tokio_runtime().unwrap().executor()),
+			transaction_pool.clone(),
+			Configuration {
+				self_id: key_server_id,
+				max_active_sessions: Some(3),
+				pending_restart_interval: Some(Duration::from_secs(60 * 1_000)),
+			},
+			blocks_stream,
+		)).unwrap();
+
+		// listener is registered once for every service
+		assert_eq!(*listener_registrar.0.read(), 1);
+
+		(
+			key_server,
+			transaction_pool
+		)
+	}
+
+	fn run_at_key_server_with_data(
+		key_server_id: KeyServerId,
+		service_data: Arc<RwLock<ServiceData>>,
+	) -> (Arc<AccumulatingKeyServer>, Arc<TestTransactionPool>) {
+		run_tasks_at_key_server_with_data(
+			key_server_id,
+			service_data,
+			default_key_storage(),
+			vec![BlockchainServiceTask::Regular(Default::default(), new_task())],
+			vec![BlockchainServiceTask::Regular(Default::default(), pending_task())],
+		)
+	}
+
+	fn run_at_key_server(key_server_id: KeyServerId) -> (Arc<AccumulatingKeyServer>, Arc<TestTransactionPool>) {
+		run_at_key_server_with_data(key_server_id, Arc::new(RwLock::new(empty_service_data())))
+	}
+
+	fn run_at_key_server_server_key_retrieval(
+		key_server_id: KeyServerId,
+		service_data: Arc<RwLock<ServiceData>>,
+	) -> (Arc<AccumulatingKeyServer>, Arc<TestTransactionPool>) {
+		run_tasks_at_key_server_with_data(
+			key_server_id,
+			service_data,
+			default_key_storage(),
+			vec![BlockchainServiceTask::Regular(Default::default(), server_key_retrieval_task())],
+			vec![],
+		)
+	}
+
+	fn run_at_key_server_document_key_store(
+		key_server_id: KeyServerId,
+		service_data: Arc<RwLock<ServiceData>>,
+	) -> (Arc<AccumulatingKeyServer>, Arc<TestTransactionPool>) {
+		run_tasks_at_key_server_with_data(
+			key_server_id,
+			service_data,
+			default_key_storage(),
+			vec![BlockchainServiceTask::Regular(Default::default(), document_key_store_task())],
+			vec![],
+		)
+	}
+
+	fn run_at_key_server_document_key_common_retrieval(
+		key_server_id: KeyServerId,
+		service_data: Arc<RwLock<ServiceData>>,
+	) -> (Arc<AccumulatingKeyServer>, Arc<TestTransactionPool>) {
+		run_tasks_at_key_server_with_data(
+			key_server_id,
+			service_data,
+			default_key_storage(),
+			vec![BlockchainServiceTask::RetrieveShadowDocumentKeyCommon(
+				Default::default(),
+				KEY1_ID.into(),
+				Requester::Address(REQUESTER1_ID.into()),
+			)],
+			vec![],
+		)
+	}
+
+	fn run_at_key_server_document_key_personal_retrieval(
+		key_server_id: KeyServerId,
+		service_data: Arc<RwLock<ServiceData>>,
+	) -> (Arc<AccumulatingKeyServer>, Arc<TestTransactionPool>) {
+		run_tasks_at_key_server_with_data(
+			key_server_id,
+			service_data,
+			default_key_storage(),
+			vec![BlockchainServiceTask::RetrieveShadowDocumentKeyPersonal(
+				Default::default(),
+				KEY1_ID.into(),
+				Requester::Address(REQUESTER1_ID.into()),
+			)],
+			vec![],
+		)
+	}
+
+	#[test]
+	fn new_tasks_are_ignored_by_isolated_key_server() {
+		assert_eq!(
+			run_at_key_server(KEY_SERVER100_ID.into()).0.accumulated_tasks(),
+			vec![],
+		);
+	}
+
+	#[test]
+	fn new_tasks_are_started_by_key_server() {
+		assert_eq!(
+			run_at_key_server(KEY_SERVER1_ID.into()).0.accumulated_tasks(),
+			vec![new_task()],
+		);
+	}
+
+	#[test]
+	fn service_ignores_new_tasks_when_there_are_too_many_active_tasks() {
+		let mut service_data = empty_service_data();
+		service_data.last_restart_time = Instant::now() - Duration::from_secs(1_000);
+		service_data.server_key_generation_sessions.insert([100u8; 32].into());
+		service_data.server_key_generation_sessions.insert([101u8; 32].into());
+		service_data.server_key_generation_sessions.insert([102u8; 32].into());
+
+		assert_eq!(
+			run_at_key_server_with_data(KEY_SERVER1_ID.into(), Arc::new(RwLock::new(service_data)))
+				.0.accumulated_tasks(),
+			vec![],
+		);
+	}
+
+	#[test]
+	fn service_retries_pending_tasks_when_it_is_time() {
+		let mut service_data = empty_service_data();
+		service_data.recent_server_key_generation_sessions.insert(KEY3_ID.into());
+		service_data.last_restart_time = Instant::now() - Duration::from_secs(100 * 1_000);
+
+		let service_data = Arc::new(RwLock::new(service_data));
+		assert_eq!(
+			run_at_key_server_with_data(KEY_SERVER1_ID.into(), service_data.clone())
+				.0.accumulated_tasks(),
+			vec![new_task(), pending_task()],
+		);
+		assert!(service_data.read().recent_server_key_generation_sessions.is_empty());
+	}
+
+	#[test]
+	fn service_ignores_pending_tasks_when_there_are_too_many_active_tasks() {
+		let mut service_data = empty_service_data();
+		service_data.last_restart_time = Instant::now() - Duration::from_secs(1_000);
+		service_data.server_key_generation_sessions.insert([100u8; 32].into());
+		service_data.server_key_generation_sessions.insert([101u8; 32].into());
+		service_data.last_restart_time = Instant::now() - Duration::from_secs(100 * 1_000);
+
+		assert_eq!(
+			run_at_key_server_with_data(KEY_SERVER1_ID.into(), Arc::new(RwLock::new(empty_service_data())))
+				.0.accumulated_tasks(),
+			vec![new_task()],
+		);
+	}
+
+	#[test]
+	fn process_tasks_ignores_foreign_server_key_generation_task() {
+		assert_eq!(
+			run_at_key_server(KEY_SERVER2_ID.into()).0.accumulated_tasks(),
+			vec![],
+		);
+	}
+
+	#[test]
+	fn process_tasks_ignores_recent_server_key_generation_task() {
+		let mut service_data = empty_service_data();
+		service_data.recent_server_key_generation_sessions.insert(KEY1_ID.into());
+		assert_eq!(
+			run_at_key_server_with_data(KEY_SERVER1_ID.into(), Arc::new(RwLock::new(service_data)))
+				.0.accumulated_tasks(),
+			vec![],
+		);
+	}
+
+	#[test]
+	fn process_tasks_ignores_active_server_key_generation_task() {
+		let mut service_data = empty_service_data();
+		service_data.server_key_generation_sessions.insert(KEY1_ID.into());
+		assert_eq!(
+			run_at_key_server_with_data(KEY_SERVER1_ID.into(), Arc::new(RwLock::new(service_data)))
+				.0.accumulated_tasks(),
+			vec![],
+		);
+	}
+
+	#[test]
+	fn process_tasks_spawns_filtered_server_key_generation_task() {
+		assert_eq!(
+			run_at_key_server(KEY_SERVER1_ID.into()).0.accumulated_tasks(),
+			vec![new_task()],
+		);
+	}
+
+	#[test]
+	fn process_tasks_ignores_recent_server_key_retrieval_task() {
+		let mut service_data = empty_service_data();
+		service_data.recent_server_key_retrieval_sessions.insert(KEY1_ID.into());
+		assert_eq!(
+			run_at_key_server_server_key_retrieval(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(service_data)),
+			).1.retrieved_server_keys.read().clone(),
+			vec![],
+		);
+	}
+
+	#[test]
+	fn process_tasks_spawns_filtered_server_key_retrieval_task() {
+		assert_eq!(
+			run_at_key_server_server_key_retrieval(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(empty_service_data())),
+			).1.retrieved_server_keys.read().clone(),
+			vec![KEY1_ID.into()],
+		);
+	}
+
+	#[test]
+	fn process_tasks_fails_filtered_server_key_retrieval_task_when_key_is_not_found() {
+		assert_eq!(
+			run_tasks_at_key_server_with_data(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(empty_service_data())),
+				Arc::new(InMemoryKeyStorage::default()),
+				vec![BlockchainServiceTask::Regular(Default::default(), server_key_retrieval_task())],
+				vec![],
+			).1.failed_retrieved_server_keys.read().clone(),
+			vec![KEY1_ID.into()],
+		);
+	}
+
+	#[test]
+	fn process_tasks_ignores_recent_document_key_store_task() {
+		let mut service_data = empty_service_data();
+		service_data.recent_document_key_store_sessions.insert(KEY1_ID.into());
+		assert_eq!(
+			run_at_key_server_document_key_store(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(service_data)),
+			).1.stored_document_keys.read().clone(),
+			vec![],
+		);
+	}
+
+	#[test]
+	fn process_tasks_spawns_filtered_document_key_store_task() {
+		assert_eq!(
+			run_at_key_server_document_key_store(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(empty_service_data())),
+			).1.stored_document_keys.read().clone(),
+			vec![KEY1_ID.into()],
+		);
+	}
+
+	#[test]
+	fn process_tasks_fails_filtered_document_key_store_task_when_key_is_not_found() {
+		assert_eq!(
+			run_tasks_at_key_server_with_data(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(empty_service_data())),
+				Arc::new(InMemoryKeyStorage::default()),
+				vec![BlockchainServiceTask::Regular(Default::default(), document_key_store_task())],
+				vec![],
+			).1.failed_stored_document_keys.read().clone(),
+			vec![KEY1_ID.into()],
+		);
+	}
+
+	#[test]
+	fn process_tasks_fails_filtered_document_key_store_task_when_key_is_already_stored() {
+		let key_storage = InMemoryKeyStorage::default();
+		key_storage.insert(KEY1_ID.into(), primitives::key_storage::KeyShare {
+			author: REQUESTER1_ID.into(),
+			common_point: Some([42u8; 64].into()),
+			..Default::default()
+		}).unwrap();
+		assert_eq!(
+			run_tasks_at_key_server_with_data(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(empty_service_data())),
+				Arc::new(key_storage),
+				vec![BlockchainServiceTask::Regular(Default::default(), document_key_store_task())],
+				vec![],
+			).1.failed_stored_document_keys.read().clone(),
+			vec![KEY1_ID.into()],
+		);
+	}
+
+	#[test]
+	fn process_tasks_fails_filtered_document_key_store_task_when_key_author_is_different() {
+		let key_storage = InMemoryKeyStorage::default();
+		key_storage.insert(KEY1_ID.into(), primitives::key_storage::KeyShare {
+			author: REQUESTER2_ID.into(),
+			..Default::default()
+		}).unwrap();
+		assert_eq!(
+			run_tasks_at_key_server_with_data(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(empty_service_data())),
+				Arc::new(key_storage),
+				vec![BlockchainServiceTask::Regular(Default::default(), document_key_store_task())],
+				vec![],
+			).1.failed_stored_document_keys.read().clone(),
+			vec![KEY1_ID.into()],
+		);
+	}
+
+	#[test]
+	fn process_tasks_ignores_active_document_key_common_retrieval_task() {
+		let mut service_data = empty_service_data();
+		service_data.document_key_common_retrieval_sessions.insert(
+			(KEY1_ID.into(), Requester::Address(REQUESTER1_ID.into())),
+		);
+		assert_eq!(
+			run_at_key_server_document_key_common_retrieval(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(service_data)),
+			).0.accumulated_tasks(),
+			vec![],
+		);
+	}
+
+	#[test]
+	fn process_tasks_ignores_recent_document_key_common_retrieval_task() {
+		let mut service_data = empty_service_data();
+		service_data.recent_document_key_common_retrieval_sessions.insert(
+			(KEY1_ID.into(), Requester::Address(REQUESTER1_ID.into())),
+		);
+		assert_eq!(
+			run_at_key_server_document_key_common_retrieval(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(service_data)),
+			).0.accumulated_tasks(),
+			vec![],
+		);
+	}
+
+	#[test]
+	fn process_tasks_spawns_filtered_document_key_common_retrieval_task() {
+		assert_eq!(
+			run_at_key_server_document_key_common_retrieval(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(empty_service_data())),
+			).0.accumulated_tasks(),
+			vec![document_key_shadow_retrieval_task()],
+		);
+	}
+
+	#[test]
+	fn process_tasks_ignores_foreign_document_key_personal_retrieval_task() {
+		assert_eq!(
+			run_at_key_server_document_key_personal_retrieval(
+				KEY_SERVER2_ID.into(),
+				Arc::new(RwLock::new(empty_service_data())),
+			).0.accumulated_tasks(),
+			vec![],
+		);
+	}
+
+	#[test]
+	fn process_tasks_ignores_recent_document_key_personal_retrieval_task() {
+		let mut service_data = empty_service_data();
+		service_data.recent_document_key_personal_retrieval_sessions.insert(
+			(KEY1_ID.into(), Requester::Address(REQUESTER1_ID.into())),
+		);
+		assert_eq!(
+			run_at_key_server_document_key_personal_retrieval(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(service_data)),
+			).0.accumulated_tasks(),
+			vec![],
+		);
+	}
+
+	#[test]
+	fn process_tasks_ignores_active_document_key_personal_retrieval_task() {
+		let mut service_data = empty_service_data();
+		service_data.document_key_personal_retrieval_sessions.insert(
+			(KEY1_ID.into(), Requester::Address(REQUESTER1_ID.into())),
+		);
+		assert_eq!(
+			run_at_key_server_document_key_personal_retrieval(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(service_data)),
+			).0.accumulated_tasks(),
+			vec![],
+		);
+	}
+
+	#[test]
+	fn process_tasks_spawns_filtered_document_key_personal_retrieval_task() {
+		assert_eq!(
+			run_at_key_server_document_key_personal_retrieval(
+				KEY_SERVER1_ID.into(),
+				Arc::new(RwLock::new(empty_service_data())),
+			).0.accumulated_tasks(),
+			vec![document_key_shadow_retrieval_task()],
+		);
 	}
 }

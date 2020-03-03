@@ -222,7 +222,7 @@ impl<B: Blockchain> parity_secretstore_blockchain_service::Block for SubstrateBl
 	type NewBlocksIterator = Box<dyn Iterator<Item = BlockchainServiceTask>>;
 	type PendingBlocksIterator = Box<dyn Iterator<Item = BlockchainServiceTask>>;
 
-	fn new_tasks(&mut self) -> Self::NewBlocksIterator {
+	fn new_tasks(&self) -> Self::NewBlocksIterator {
 		Box::new(
 			self.blockchain
 				.block_events(self.block_hash.clone())
@@ -231,7 +231,7 @@ impl<B: Blockchain> parity_secretstore_blockchain_service::Block for SubstrateBl
 		)
 	}
 
-	fn pending_tasks(&mut self) -> Self::PendingBlocksIterator {
+	fn pending_tasks(&self) -> Self::PendingBlocksIterator {
 		let (blockchain, block_hash) = (self.blockchain.clone(), self.block_hash.clone());
 		let server_key_generation_tasks = move |tasks: &mut VecDeque<BlockchainServiceTask>, range|
 			Ok(tasks.extend(
@@ -286,7 +286,7 @@ impl<B: Blockchain> parity_secretstore_blockchain_service::Block for SubstrateBl
 		)
 	}
 
-	fn current_key_servers_set(&mut self) -> BTreeSet<KeyServerId> {
+	fn current_key_servers_set(&self) -> BTreeSet<KeyServerId> {
 		self.blockchain.current_key_servers_set()
 	}
 }
