@@ -16,7 +16,7 @@
 
 use std::sync::Arc;
 use log::{info, trace, warn};
-use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
+use primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::network::{ConnectionProvider, Connection};
 use crate::key_server_cluster::{Error, NodeId};
 use crate::key_server_cluster::cluster::{ServersSetChangeParams, new_servers_set_change_session};

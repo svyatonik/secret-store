@@ -1,18 +1,18 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -22,8 +22,8 @@ use futures03::{
 };
 use parking_lot::Mutex;
 use parity_crypto::publickey::public_to_address;
-use parity_secretstore_primitives::acl_storage::AclStorage;
-use parity_secretstore_primitives::key_storage::KeyStorage;
+use primitives::acl_storage::AclStorage;
+use primitives::key_storage::KeyStorage;
 use crate::key_server_cluster::math;
 use crate::types::{Error, Public, Requester, ServerKeyId};
 use crate::key_server_cluster::ClusterClient;
@@ -73,16 +73,16 @@ impl KeyServerCore {
 }
 
 
-impl parity_secretstore_primitives::key_server::KeyServer for KeyServerImpl {
+impl primitives::key_server::KeyServer for KeyServerImpl {
 }
 
-impl parity_secretstore_primitives::key_server::ServerKeyGenerator for KeyServerImpl {
-	type GenerateKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::ServerKeyGenerationResult> + Send>>;
-	type RestoreKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::ServerKeyRetrievalResult> + Send>>;
+impl primitives::key_server::ServerKeyGenerator for KeyServerImpl {
+	type GenerateKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = primitives::key_server::ServerKeyGenerationResult> + Send>>;
+	type RestoreKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = primitives::key_server::ServerKeyRetrievalResult> + Send>>;
 
 	fn generate_key(
 		&self,
-		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		origin: Option<primitives::key_server::Origin>,
 		key_id: ServerKeyId,
 		author: Requester,
 		threshold: usize,
@@ -100,12 +100,12 @@ impl parity_secretstore_primitives::key_server::ServerKeyGenerator for KeyServer
 					.await
 			}.await;
 
-			parity_secretstore_primitives::key_server::SessionResult {
+			primitives::key_server::SessionResult {
 				origin,
-				params: parity_secretstore_primitives::key_server::ServerKeyGenerationParams {
+				params: primitives::key_server::ServerKeyGenerationParams {
 					key_id,
 				},
-				result: session_result.map(|key| parity_secretstore_primitives::key_server::ServerKeyGenerationArtifacts {
+				result: session_result.map(|key| primitives::key_server::ServerKeyGenerationArtifacts {
 					key,
 				})
 			}
@@ -114,8 +114,8 @@ impl parity_secretstore_primitives::key_server::ServerKeyGenerator for KeyServer
 
 	fn restore_key_public(
 		&self,
-		origin: Option<parity_secretstore_primitives::key_server::Origin>,
-		key_id: parity_secretstore_primitives::ServerKeyId,
+		origin: Option<primitives::key_server::Origin>,
+		key_id: primitives::ServerKeyId,
 		requester: Option<Requester>,
 	) -> Self::RestoreKeyFuture {
 		let key_server_core = self.data.clone();
@@ -150,12 +150,12 @@ impl parity_secretstore_primitives::key_server::ServerKeyGenerator for KeyServer
 					})
 			}.await;
 
-			parity_secretstore_primitives::key_server::SessionResult {
+			primitives::key_server::SessionResult {
 				origin,
-				params: parity_secretstore_primitives::key_server::ServerKeyRetrievalParams {
+				params: primitives::key_server::ServerKeyRetrievalParams {
 					key_id,
 				},
-				result: session_result.map(|key_share| parity_secretstore_primitives::key_server::ServerKeyRetrievalArtifacts {
+				result: session_result.map(|key_share| primitives::key_server::ServerKeyRetrievalArtifacts {
 					author: key_share.author,
 					key: key_share.public,
 					threshold: key_share.threshold,
@@ -165,16 +165,16 @@ impl parity_secretstore_primitives::key_server::ServerKeyGenerator for KeyServer
 	}
 }
 
-impl parity_secretstore_primitives::key_server::DocumentKeyServer for KeyServerImpl {
-	type StoreDocumentKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyStoreResult> + Send>>;
-	type GenerateDocumentKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyGenerationResult> + Send>>;
-	type RestoreDocumentKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyRetrievalResult> + Send>>;
-	type RestoreDocumentKeyCommonFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyCommonRetrievalResult> + Send>>;
-	type RestoreDocumentKeyShadowFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::DocumentKeyShadowRetrievalResult> + Send>>;
+impl primitives::key_server::DocumentKeyServer for KeyServerImpl {
+	type StoreDocumentKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = primitives::key_server::DocumentKeyStoreResult> + Send>>;
+	type GenerateDocumentKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = primitives::key_server::DocumentKeyGenerationResult> + Send>>;
+	type RestoreDocumentKeyFuture = std::pin::Pin<Box<dyn std::future::Future<Output = primitives::key_server::DocumentKeyRetrievalResult> + Send>>;
+	type RestoreDocumentKeyCommonFuture = std::pin::Pin<Box<dyn std::future::Future<Output = primitives::key_server::DocumentKeyCommonRetrievalResult> + Send>>;
+	type RestoreDocumentKeyShadowFuture = std::pin::Pin<Box<dyn std::future::Future<Output = primitives::key_server::DocumentKeyShadowRetrievalResult> + Send>>;
 
 	fn store_document_key(
 		&self,
-		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		origin: Option<primitives::key_server::Origin>,
 		key_id: ServerKeyId,
 		author: Requester,
 		common_point: Public,
@@ -193,19 +193,19 @@ impl parity_secretstore_primitives::key_server::DocumentKeyServer for KeyServerI
 					.await
 			}.await;
 
-			parity_secretstore_primitives::key_server::SessionResult {
+			primitives::key_server::SessionResult {
 				origin,
-				params: parity_secretstore_primitives::key_server::DocumentKeyStoreParams {
+				params: primitives::key_server::DocumentKeyStoreParams {
 					key_id,
 				},
-				result: session_result.map(|_| parity_secretstore_primitives::key_server::DocumentKeyStoreArtifacts)
+				result: session_result.map(|_| primitives::key_server::DocumentKeyStoreArtifacts)
 			}
 		}.boxed()
 	}
 
 	fn generate_document_key(
 		&self,
-		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		origin: Option<primitives::key_server::Origin>,
 		key_id: ServerKeyId,
 		author: Requester,
 		threshold: usize,
@@ -248,12 +248,12 @@ impl parity_secretstore_primitives::key_server::DocumentKeyServer for KeyServerI
 				Ok(document_key)
 			}.await;
 
-			parity_secretstore_primitives::key_server::SessionResult {
+			primitives::key_server::SessionResult {
 				origin,
-				params: parity_secretstore_primitives::key_server::DocumentKeyGenerationParams {
+				params: primitives::key_server::DocumentKeyGenerationParams {
 					key_id,
 				},
-				result: session_result.map(|document_key| parity_secretstore_primitives::key_server::DocumentKeyGenerationArtifacts {
+				result: session_result.map(|document_key| primitives::key_server::DocumentKeyGenerationArtifacts {
 					document_key,
 				})
 			}
@@ -262,7 +262,7 @@ impl parity_secretstore_primitives::key_server::DocumentKeyServer for KeyServerI
 
 	fn restore_document_key(
 		&self,
-		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		origin: Option<primitives::key_server::Origin>,
 		key_id: ServerKeyId,
 		requester: Requester,
 	) -> Self::RestoreDocumentKeyFuture {
@@ -280,13 +280,13 @@ impl parity_secretstore_primitives::key_server::DocumentKeyServer for KeyServerI
 					.await
 			}.await;
 
-			parity_secretstore_primitives::key_server::SessionResult {
+			primitives::key_server::SessionResult {
 				origin,
-				params: parity_secretstore_primitives::key_server::DocumentKeyRetrievalParams {
+				params: primitives::key_server::DocumentKeyRetrievalParams {
 					key_id,
 					requester: requester_copy,
 				},
-				result: session_result.map(|document_key| parity_secretstore_primitives::key_server::DocumentKeyRetrievalArtifacts {
+				result: session_result.map(|document_key| primitives::key_server::DocumentKeyRetrievalArtifacts {
 					document_key: document_key.decrypted_secret,
 				})
 			}
@@ -295,7 +295,7 @@ impl parity_secretstore_primitives::key_server::DocumentKeyServer for KeyServerI
 
 	fn restore_document_key_common(
 		&self,
-		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		origin: Option<primitives::key_server::Origin>,
 		key_id: ServerKeyId,
 		requester: Requester,
 	) -> Self::RestoreDocumentKeyCommonFuture {
@@ -316,13 +316,13 @@ impl parity_secretstore_primitives::key_server::DocumentKeyServer for KeyServerI
 		};
 		let session_result = prepare_result();
 
-		ready(parity_secretstore_primitives::key_server::SessionResult {
+		ready(primitives::key_server::SessionResult {
 			origin,
-			params: parity_secretstore_primitives::key_server::DocumentKeyCommonRetrievalParams {
+			params: primitives::key_server::DocumentKeyCommonRetrievalParams {
 				key_id,
 				requester,
 			},
-			result: session_result.map(|(threshold, common_point)| parity_secretstore_primitives::key_server::DocumentKeyCommonRetrievalArtifacts {
+			result: session_result.map(|(threshold, common_point)| primitives::key_server::DocumentKeyCommonRetrievalArtifacts {
 				common_point,
 				threshold,
 			})
@@ -331,7 +331,7 @@ impl parity_secretstore_primitives::key_server::DocumentKeyServer for KeyServerI
 
 	fn restore_document_key_shadow(
 		&self,
-		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		origin: Option<primitives::key_server::Origin>,
 		key_id: ServerKeyId,
 		requester: Requester,
 	) -> Self::RestoreDocumentKeyShadowFuture {
@@ -354,13 +354,13 @@ impl parity_secretstore_primitives::key_server::DocumentKeyServer for KeyServerI
 				))
 			}.await;
 
-			parity_secretstore_primitives::key_server::SessionResult {
+			primitives::key_server::SessionResult {
 				origin,
-				params: parity_secretstore_primitives::key_server::DocumentKeyShadowRetrievalParams {
+				params: primitives::key_server::DocumentKeyShadowRetrievalParams {
 					key_id,
 					requester: requester_copy,
 				},
-				result: session_result.map(|(threshold, common_point, encrypted_document_key)| parity_secretstore_primitives::key_server::DocumentKeyShadowRetrievalArtifacts {
+				result: session_result.map(|(threshold, common_point, encrypted_document_key)| primitives::key_server::DocumentKeyShadowRetrievalArtifacts {
 					threshold,
 					common_point,
 					encrypted_document_key,
@@ -371,16 +371,16 @@ impl parity_secretstore_primitives::key_server::DocumentKeyServer for KeyServerI
 	}
 }
 
-impl parity_secretstore_primitives::key_server::MessageSigner for KeyServerImpl {
-	type SignMessageSchnorrFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::SchnorrSigningResult> + Send>>;
-	type SignMessageEcdsaFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::EcdsaSigningResult> + Send>>;
+impl primitives::key_server::MessageSigner for KeyServerImpl {
+	type SignMessageSchnorrFuture = std::pin::Pin<Box<dyn std::future::Future<Output = primitives::key_server::SchnorrSigningResult> + Send>>;
+	type SignMessageEcdsaFuture = std::pin::Pin<Box<dyn std::future::Future<Output = primitives::key_server::EcdsaSigningResult> + Send>>;
 
 	fn sign_message_schnorr(
 		&self,
-		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		origin: Option<primitives::key_server::Origin>,
 		key_id: ServerKeyId,
 		requester: Requester,
-		message: parity_secretstore_primitives::H256,
+		message: primitives::H256,
 	) -> Self::SignMessageSchnorrFuture {
 		let key_server_core = self.data.clone();
 		async move {
@@ -396,13 +396,13 @@ impl parity_secretstore_primitives::key_server::MessageSigner for KeyServerImpl 
 					.await
 			}.await;
 
-			parity_secretstore_primitives::key_server::SessionResult {
+			primitives::key_server::SessionResult {
 				origin,
-				params: parity_secretstore_primitives::key_server::SchnorrSigningParams {
+				params: primitives::key_server::SchnorrSigningParams {
 					key_id,
 					requester: requester_copy,
 				},
-				result: session_result.map(|(signature_c, signature_s)| parity_secretstore_primitives::key_server::SchnorrSigningArtifacts {
+				result: session_result.map(|(signature_c, signature_s)| primitives::key_server::SchnorrSigningArtifacts {
 					signature_c: *signature_c,
 					signature_s: *signature_s,
 				})
@@ -412,10 +412,10 @@ impl parity_secretstore_primitives::key_server::MessageSigner for KeyServerImpl 
 
 	fn sign_message_ecdsa(
 		&self,
-		origin: Option<parity_secretstore_primitives::key_server::Origin>,
+		origin: Option<primitives::key_server::Origin>,
 		key_id: ServerKeyId,
 		requester: Requester,
-		message: parity_secretstore_primitives::H256,
+		message: primitives::H256,
 	) -> Self::SignMessageEcdsaFuture {
 		let key_server_core = self.data.clone();
 		async move {
@@ -431,13 +431,13 @@ impl parity_secretstore_primitives::key_server::MessageSigner for KeyServerImpl 
 					.await
 			}.await;
 
-			parity_secretstore_primitives::key_server::SessionResult {
+			primitives::key_server::SessionResult {
 				origin,
-				params: parity_secretstore_primitives::key_server::EcdsaSigningParams {
+				params: primitives::key_server::EcdsaSigningParams {
 					key_id,
 					requester: requester_copy,
 				},
-				result: session_result.map(|signature| parity_secretstore_primitives::key_server::EcdsaSigningArtifacts {
+				result: session_result.map(|signature| primitives::key_server::EcdsaSigningArtifacts {
 					signature,
 				})
 			}
@@ -445,15 +445,15 @@ impl parity_secretstore_primitives::key_server::MessageSigner for KeyServerImpl 
 	}
 }
 
-impl parity_secretstore_primitives::key_server::AdminSessionsServer for KeyServerImpl {
-	type ChangeServersSetFuture = std::pin::Pin<Box<dyn std::future::Future<Output = parity_secretstore_primitives::key_server::SessionResult<(), ()>> + Send>>;
+impl primitives::key_server::AdminSessionsServer for KeyServerImpl {
+	type ChangeServersSetFuture = std::pin::Pin<Box<dyn std::future::Future<Output = primitives::key_server::SessionResult<(), ()>> + Send>>;
 
 	fn change_servers_set(
 		&self,
-		_origin: Option<parity_secretstore_primitives::key_server::Origin>,
-		_old_set_signature: parity_secretstore_primitives::Signature,
-		_new_set_signature: parity_secretstore_primitives::Signature,
-		_new_servers_set: BTreeSet<parity_secretstore_primitives::KeyServerPublic>,
+		_origin: Option<primitives::key_server::Origin>,
+		_old_set_signature: primitives::Signature,
+		_new_set_signature: primitives::Signature,
+		_new_servers_set: BTreeSet<primitives::KeyServerPublic>,
 	) -> Self::ChangeServersSetFuture {
 		unimplemented!("TODO")
 	}
@@ -463,7 +463,7 @@ impl parity_secretstore_primitives::key_server::AdminSessionsServer for KeyServe
 pub mod tests {
 	use ethereum_types::H256;
 	use parity_crypto::publickey::{Random, Generator, verify_public};
-	use parity_secretstore_primitives::key_storage::KeyStorage;
+	use primitives::key_storage::KeyStorage;
 	use crate::types::Requester;
 	use crate::traits::{ServerKeyGenerator, DocumentKeyServer, MessageSigner};
 	use super::KeyServerImpl;
@@ -488,8 +488,8 @@ pub mod tests {
 
 		// generate document key
 		let threshold = 0;
-		let document = Random.generate().unwrap().secret().clone();
-		let secret = Random.generate().unwrap().secret().clone();
+		let document = Random.generate().secret().clone();
+		let secret = Random.generate().secret().clone();
 		let signature: Requester = parity_crypto::publickey::sign(&secret, &document).unwrap().into();
 		let generated_key = ml.loop_until_future_completed(
 			key_server0.generate_document_key(
@@ -519,8 +519,8 @@ pub mod tests {
 		let test_cases = [0, 1, 2];
 		for threshold in &test_cases {
 			// generate document key
-			let document = Random.generate().unwrap().secret().clone();
-			let secret = Random.generate().unwrap().secret().clone();
+			let document = Random.generate().secret().clone();
+			let secret = Random.generate().secret().clone();
 			let signature: Requester = parity_crypto::publickey::sign(&secret, &document).unwrap().into();
 			let generated_key = ml.loop_until_future_completed(
 				make_key_server(&ml, 0).generate_document_key(
@@ -557,8 +557,8 @@ pub mod tests {
 		let test_cases = [0, 1, 2];
 		for threshold in &test_cases {
 			// generate server key
-			let server_key_id = Random.generate().unwrap().secret().clone();
-			let requestor_secret = Random.generate().unwrap().secret().clone();
+			let server_key_id = Random.generate().secret().clone();
+			let requestor_secret = Random.generate().secret().clone();
 			let signature: Requester = parity_crypto::publickey::sign(&requestor_secret, &server_key_id).unwrap().into();
 			let server_public = ml.loop_until_future_completed(
 				make_key_server(&ml, 0).generate_key(
@@ -570,7 +570,7 @@ pub mod tests {
 			).result.unwrap().key;
 
 			// generate document key (this is done by KS client so that document key is unknown to any KS)
-			let generated_key = Random.generate().unwrap().public().clone();
+			let generated_key = Random.generate().public().clone();
 			let encrypted_document_key = math::encrypt_secret(&generated_key, &server_public).unwrap();
 
 			// store document key
@@ -606,8 +606,8 @@ pub mod tests {
 		let test_cases = [0, 1, 2];
 		for threshold in &test_cases {
 			// generate server key
-			let server_key_id = Random.generate().unwrap().secret().clone();
-			let requestor_secret = Random.generate().unwrap().secret().clone();
+			let server_key_id = Random.generate().secret().clone();
+			let requestor_secret = Random.generate().secret().clone();
 			let signature: Requester = parity_crypto::publickey::sign(&requestor_secret, &server_key_id).unwrap().into();
 			let server_public = ml.loop_until_future_completed(
 				make_key_server(&ml, 0).generate_key(
@@ -643,8 +643,8 @@ pub mod tests {
 
 		// generate document key
 		let threshold = 0;
-		let document = Random.generate().unwrap().secret().clone();
-		let secret = Random.generate().unwrap().secret().clone();
+		let document = Random.generate().secret().clone();
+		let secret = Random.generate().secret().clone();
 		let signature: Requester = parity_crypto::publickey::sign(&secret, &document).unwrap().into();
 		let generated_key = ml.loop_until_future_completed(
 			make_key_server(&ml, 0).generate_document_key(
@@ -676,8 +676,8 @@ pub mod tests {
 		let threshold = 1;
 
 		// generate server key
-		let server_key_id = Random.generate().unwrap().secret().clone();
-		let requestor_secret = Random.generate().unwrap().secret().clone();
+		let server_key_id = Random.generate().secret().clone();
+		let requestor_secret = Random.generate().secret().clone();
 		let signature: Requester = parity_crypto::publickey::sign(&requestor_secret, &server_key_id).unwrap().into();
 		let server_public = ml.loop_until_future_completed(
 			make_key_server(&ml, 0).generate_key(
@@ -715,8 +715,8 @@ pub mod tests {
 		let threshold = 1;
 
 		// generate server key
-		let server_key_id = Random.generate().unwrap().secret().clone();
-		let requestor_secret = Random.generate().unwrap().secret().clone();
+		let server_key_id = Random.generate().secret().clone();
+		let requestor_secret = Random.generate().secret().clone();
 		let signature = parity_crypto::publickey::sign(&requestor_secret, &server_key_id).unwrap();
 		let server_public = ml.loop_until_future_completed(
 			make_key_server(&ml, 0).generate_key(

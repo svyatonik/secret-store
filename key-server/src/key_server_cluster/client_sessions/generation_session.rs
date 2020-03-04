@@ -1,18 +1,18 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeSet, BTreeMap, VecDeque};
 use std::fmt::{Debug, Formatter, Error as FmtError};
@@ -22,7 +22,7 @@ use parking_lot::Mutex;
 use ethereum_types::Address;
 use log::warn;
 use parity_crypto::publickey::{Public, Secret};
-use parity_secretstore_primitives::key_storage::{KeyStorage, KeyShare, KeyShareVersion};
+use primitives::key_storage::{KeyStorage, KeyShare, KeyShareVersion};
 use crate::key_server_cluster::{Error, NodeId, SessionId};
 use crate::key_server_cluster::math;
 use crate::key_server_cluster::cluster::Cluster;
@@ -954,8 +954,8 @@ pub mod tests {
 	use std::sync::Arc;
 	use ethereum_types::H256;
 	use parity_crypto::publickey::{Random, Generator, KeyPair, Secret};
-	use parity_secretstore_primitives::key_storage::KeyStorage;
-	use crate::key_server_cluster::{NodeId, Error};
+	use primitives::key_storage::KeyStorage;
+	use crate::key_server_cluster::{NodeId, Error, SessionId, ServerKeyId};
 	use crate::key_server_cluster::message::{self, Message, GenerationMessage, KeysDissemination,
 		PublicKeyShare, ConfirmInitialization};
 	use crate::key_server_cluster::cluster::tests::{MessageLoop as ClusterMessageLoop, make_clusters_and_preserve_sessions};
@@ -973,7 +973,7 @@ pub mod tests {
 		}
 
 		pub fn init(self, threshold: usize) -> Result<Self, Error> {
-			self.0.cluster(0).client().new_generation_session(Default::default(), None, Default::default(), threshold)
+			self.0.cluster(0).client().new_generation_session(SessionId::from([1u8; 32]), None, Default::default(), threshold)
 				.map(|_| self)
 		}
 
@@ -1024,7 +1024,8 @@ pub mod tests {
 		}
 
 		pub fn compute_key_pair(&self) -> KeyPair {
-			let t = self.0.key_storage(0).get(&Default::default()).unwrap().unwrap().threshold;
+			let server_key_id = ServerKeyId::from([1u8; 32]);
+			let t = self.0.key_storage(0).get(&server_key_id).unwrap().unwrap().threshold;
 			let secret_shares = self.nodes_secret_shares();
 			let id_numbers = self.nodes_id_numbers();
 			let secret_shares = secret_shares.iter().take(t + 1).collect::<Vec<_>>();
@@ -1035,7 +1036,8 @@ pub mod tests {
 		}
 
 		pub fn key_version(&self) -> H256 {
-			self.0.key_storage(0).get(&Default::default())
+			let server_key_id = ServerKeyId::from([1u8; 32]);
+			self.0.key_storage(0).get(&server_key_id)
 				.unwrap().unwrap().versions.iter().last().unwrap().hash
 		}
 	}
@@ -1106,7 +1108,7 @@ pub mod tests {
 		ml.0.take_and_process_message();
 		ml.0.take_and_process_message();
 		assert_eq!(ml.session_at(0).on_confirm_initialization(ml.0.node(1), &message::ConfirmInitialization {
-			session: Default::default(),
+			session: [1u8; 32].into(),
 			session_nonce: 0,
 			derived_point: math::generate_random_point().unwrap().into(),
 		}), Err(Error::InvalidStateForRequest));
@@ -1134,7 +1136,7 @@ pub mod tests {
 		let ml = MessageLoop::new(2).init(0).unwrap();
 		ml.0.take_and_process_message();
 		assert_eq!(ml.session_at(0).on_complete_initialization(ml.0.node(1), &message::CompleteInitialization {
-			session: Default::default(),
+			session: [1u8; 32].into(),
 			session_nonce: 0,
 			derived_point: math::generate_random_point().unwrap().into(),
 		}), Err(Error::InvalidStateForRequest));
@@ -1148,7 +1150,7 @@ pub mod tests {
 		ml.0.take_and_process_message();
 		ml.0.take_and_process_message();
 		assert_eq!(ml.session_at(1).on_complete_initialization(ml.0.node(2), &message::CompleteInitialization {
-			session: Default::default(),
+			session: [1u8; 32].into(),
 			session_nonce: 0,
 			derived_point: math::generate_random_point().unwrap().into(),
 		}), Err(Error::InvalidMessage));
@@ -1158,7 +1160,7 @@ pub mod tests {
 	fn fails_to_accept_keys_dissemination_if_not_waiting_for_it() {
 		let ml = MessageLoop::new(2).init(0).unwrap();
 		assert_eq!(ml.session_at(0).on_keys_dissemination(ml.0.node(1), &message::KeysDissemination {
-			session: Default::default(),
+			session: [1u8; 32].into(),
 			session_nonce: 0,
 			secret1: math::generate_random_scalar().unwrap().into(),
 			secret2: math::generate_random_scalar().unwrap().into(),
@@ -1200,7 +1202,7 @@ pub mod tests {
 	fn should_not_accept_public_key_share_when_is_not_waiting_for_it() {
 		let ml = MessageLoop::new(3).init(1).unwrap();
 		assert_eq!(ml.session_at(0).on_public_key_share(ml.0.node(1), &message::PublicKeyShare {
-			session: Default::default(),
+			session: [1u8; 32].into(),
 			session_nonce: 0,
 			public_share: math::generate_random_point().unwrap().into(),
 		}), Err(Error::InvalidStateForRequest));
@@ -1259,7 +1261,7 @@ pub mod tests {
 			}
 
 			// now let's encrypt some secret (which is a point on EC)
-			let document_secret_plain = Random.generate().unwrap().public().clone();
+			let document_secret_plain = Random.generate().public().clone();
 			let all_nodes_id_numbers = ml.nodes_id_numbers();
 			let all_nodes_secret_shares = ml.nodes_secret_shares();
 			let document_secret_decrypted = do_encryption_and_decryption(threshold, &joint_public_key,
@@ -1278,7 +1280,7 @@ pub mod tests {
 		ml.0.take_and_process_message();
 
 		let msg = message::GenerationMessage::KeysDissemination(message::KeysDissemination {
-			session: Default::default(),
+			session: [1u8; 32].into(),
 			session_nonce: 10,
 			secret1: math::generate_random_scalar().unwrap().into(),
 			secret2: math::generate_random_scalar().unwrap().into(),

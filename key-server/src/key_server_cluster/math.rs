@@ -1,18 +1,18 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use parity_crypto::publickey::{Public, Secret, Signature, Random, Generator, ec_math_utils};
 use ethereum_types::{H256, U256, BigEndianHash};
@@ -26,6 +26,16 @@ pub struct EncryptedSecret {
 	pub common_point: Public,
 	/// Ecnrypted point.
 	pub encrypted_point: Public,
+}
+
+/// Calculate the inversion of a Secret key (in place) using the `libsecp256k1` crate.
+fn invert_secret(s: &mut Secret) -> Result<(), Error> {
+	*s = secp256k1::SecretKey::parse(&s.0)
+		.map_err(|err| Error::EthKey(format!("{}", err)))?
+		.inv()
+		.serialize()
+		.into();
+	Ok(())
 }
 
 /// Create zero scalar.
@@ -44,12 +54,12 @@ pub fn to_scalar(hash: H256) -> Result<Secret, Error> {
 
 /// Generate random scalar.
 pub fn generate_random_scalar() -> Result<Secret, Error> {
-	Ok(Random.generate()?.secret().clone())
+	Ok(Random.generate().secret().clone())
 }
 
 /// Generate random point.
 pub fn generate_random_point() -> Result<Public, Error> {
-	Ok(Random.generate()?.public().clone())
+	Ok(Random.generate().public().clone())
 }
 
 /// Generate random address.
@@ -103,12 +113,13 @@ pub fn compute_shadow_mul<'a, I>(coeff: &Secret, self_secret: &Secret, mut other
 
 	let mut shadow_mul = self_secret.clone();
 	shadow_mul.sub(other_secret)?;
-	shadow_mul.inv()?;
+	invert_secret(&mut shadow_mul)?;
+
 	shadow_mul.mul(other_secret)?;
 	while let Some(other_secret) = other_secrets.next() {
 		let mut shadow_mul_element = self_secret.clone();
 		shadow_mul_element.sub(other_secret)?;
-		shadow_mul_element.inv()?;
+		invert_secret(&mut shadow_mul_element)?;
 		shadow_mul_element.mul(other_secret)?;
 		shadow_mul.mul(&shadow_mul_element)?;
 	}
@@ -259,7 +270,7 @@ pub fn compute_joint_secret_from_shares<'a>(t: usize, secret_shares: &[&'a Secre
 /// Encrypt secret with joint public key.
 pub fn encrypt_secret(secret: &Public, joint_public: &Public) -> Result<EncryptedSecret, Error> {
 	// this is performed by KS-cluster client (or KS master)
-	let key_pair = Random.generate()?;
+	let key_pair = Random.generate();
 
 	// k * T
 	let mut common_point = ec_math_utils::generation_point();
@@ -321,7 +332,7 @@ pub fn compute_joint_shadow_point_test<'a, I>(access_key: &Secret, common_point:
 /// Decrypt data using joint shadow point.
 pub fn decrypt_with_joint_shadow(threshold: usize, access_key: &Secret, encrypted_point: &Public, joint_shadow_point: &Public) -> Result<Public, Error> {
 	let mut inv_access_key = access_key.clone();
-	inv_access_key.inv()?;
+	invert_secret(&mut inv_access_key)?;
 
 	let mut mul = joint_shadow_point.clone();
 	ec_math_utils::public_mul_secret(&mut mul, &inv_access_key)?;
@@ -532,7 +543,7 @@ pub fn compute_ecdsa_inversed_secret_coeff_from_shares(t: usize, id_numbers: &[S
 
 	// compute inv(u)
 	let mut u_inv = u;
-	u_inv.inv()?;
+	invert_secret(&mut u_inv)?;
 	Ok(u_inv)
 }
 
@@ -576,7 +587,7 @@ pub mod tests {
 		// === PART1: DKG ===
 
 		// data, gathered during initialization
-		let derived_point = Random.generate().unwrap().public().clone();
+		let derived_point = Random.generate().public().clone();
 		let id_numbers: Vec<_> = match id_numbers {
 			Some(id_numbers) => id_numbers,
 			None => (0..n).map(|_| generate_random_scalar().unwrap()).collect(),
@@ -807,7 +818,7 @@ pub mod tests {
 
 	#[test]
 	fn local_signature_works() {
-		let key_pair = Random.generate().unwrap();
+		let key_pair = Random.generate();
 		let message_hash = "0000000000000000000000000000000000000000000000000000000000000042".parse().unwrap();
 		let nonce = generate_random_scalar().unwrap();
 		let signature = local_compute_schnorr_signature(&nonce, key_pair.secret(), &message_hash).unwrap();
@@ -893,8 +904,8 @@ pub mod tests {
 		let test_cases = [(2, 5), (2, 6), (3, 11), (4, 11)];
 		for &(t, n) in &test_cases {
 			// values that can be hardcoded
-			let joint_secret: Secret = Random.generate().unwrap().secret().clone();
-			let joint_nonce: Secret = Random.generate().unwrap().secret().clone();
+			let joint_secret: Secret = Random.generate().secret().clone();
+			let joint_nonce: Secret = Random.generate().secret().clone();
 			let message_hash: H256 = H256::random();
 
 			// convert message hash to EC scalar
@@ -1071,7 +1082,7 @@ pub mod tests {
 			// calculate inversion of original shared secret
 			let joint_secret = compute_joint_secret(artifacts.polynoms1.iter().map(|p| &p[0])).unwrap();
 			let mut expected_joint_secret_inv = joint_secret.clone();
-			expected_joint_secret_inv.inv().unwrap();
+			invert_secret(&mut expected_joint_secret_inv).unwrap();
 
 			// run inversion protocol
 			let reciprocal_shares = run_reciprocal_protocol(t, &artifacts);
@@ -1084,5 +1095,18 @@ pub mod tests {
 
 			assert_eq!(actual_joint_secret_inv, expected_joint_secret_inv);
 		}
+	}
+
+	#[test]
+	fn multiplying_secret_inversion_with_secret_gives_one() {
+		use std::str::FromStr;
+		let secret = Random.generate().secret().clone();
+		let mut inversion = secret.clone();
+		invert_secret(&mut inversion).unwrap();
+		inversion.mul(&secret).unwrap();
+		assert_eq!(
+			inversion,
+			Secret::from_str("0000000000000000000000000000000000000000000000000000000000000001").unwrap()
+		);
 	}
 }

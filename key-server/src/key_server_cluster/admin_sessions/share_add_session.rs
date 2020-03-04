@@ -1,18 +1,18 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::Arc;
 use std::collections::{BTreeSet, BTreeMap};
@@ -21,7 +21,7 @@ use log::warn;
 use parity_crypto::publickey::{Public, Secret, Signature};
 use futures::Oneshot;
 use parking_lot::Mutex;
-use parity_secretstore_primitives::key_storage::{KeyShare, KeyShareVersion, KeyStorage};
+use primitives::key_storage::{KeyShare, KeyShareVersion, KeyStorage};
 use crate::key_server_cluster::{Error, SessionId, NodeId};
 use crate::key_server_cluster::cluster::Cluster;
 use crate::key_server_cluster::cluster_sessions::{ClusterSession, CompletionSignal};
@@ -891,8 +891,8 @@ impl SessionTransport for IsolatedSessionTransport {
 pub mod tests {
 	use std::collections::BTreeSet;
 	use parity_crypto::publickey::{Address, Random, Generator};
-	use parity_secretstore_primitives::key_storage::KeyStorage;
-	use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
+	use primitives::key_storage::KeyStorage;
+	use primitives::key_server_key_pair::KeyServerKeyPair;
 	use crate::key_server_cluster::{NodeId, Error};
 	use crate::key_server_cluster::cluster::tests::MessageLoop as ClusterMessageLoop;
 	use crate::key_server_cluster::servers_set_change_session::tests::{MessageLoop, AdminSessionAdapter, generate_key};
@@ -948,7 +948,7 @@ pub mod tests {
 		let gml = generate_key(3, 1);
 
 		// try to remove 1 node
-		let add = vec![Random.generate().unwrap()];
+		let add = vec![Random.generate()];
 		let remove: BTreeSet<_> = ::std::iter::once(gml.0.node(1)).collect();
 		let master = gml.0.node(0);
 		assert_eq!(MessageLoop::with_gml::<Adapter>(gml, master, Some(add), Some(remove), None)
@@ -973,7 +973,7 @@ pub mod tests {
 		let gml = generate_key(3, 1);
 
 		// try to add 1 node using this node as a master node
-		let add = vec![Random.generate().unwrap()];
+		let add = vec![Random.generate()];
 		let master = add[0].address();
 		assert_eq!(MessageLoop::with_gml::<Adapter>(gml, master, Some(add), None, None)
 			.run_at(master).unwrap_err(), Error::ServerKeyIsNotFound);
@@ -985,7 +985,7 @@ pub mod tests {
 		let gml = generate_key(3, 1);
 
 		// try to add 1 node using this node as a master node
-		let add = vec![Random.generate().unwrap()];
+		let add = vec![Random.generate()];
 		let master = gml.0.node(0);
 		assert_eq!(MessageLoop::with_gml::<Adapter>(gml, master, Some(add), None, None)
 			.init_at(master).unwrap()
@@ -998,7 +998,7 @@ pub mod tests {
 		let gml = generate_key(3, 1);
 
 		// try to add 1 node using this node as a master node
-		let add = vec![Random.generate().unwrap()];
+		let add = vec![Random.generate()];
 		let master = gml.0.node(0);
 		assert_eq!(MessageLoop::with_gml::<Adapter>(gml, master, Some(add), None, None)
 			.sessions[&master]
@@ -1013,7 +1013,7 @@ pub mod tests {
 			let gml = generate_key(n, 1);
 
 			// run share add session
-			let add = (0..add).map(|_| Random.generate().unwrap()).collect();
+			let add = (0..add).map(|_| Random.generate()).collect();
 			let master = gml.0.node(0);
 			let ml = MessageLoop::with_gml::<Adapter>(gml, master, Some(add), None, None)
 				.run_at(master).unwrap();
@@ -1033,7 +1033,7 @@ pub mod tests {
 		// run share add session
 		let master = gml.0.node(0);
 		let node_to_isolate = gml.0.node(1);
-		let add = (0..add).map(|_| Random.generate().unwrap()).collect();
+		let add = (0..add).map(|_| Random.generate()).collect();
 		let isolate = ::std::iter::once(node_to_isolate).collect();
 		let ml = MessageLoop::with_gml::<Adapter>(gml, master, Some(add), None, Some(isolate))
 			.run_at(master).unwrap();
@@ -1056,12 +1056,13 @@ pub mod tests {
 		let isolated_key_storage = gml.0.key_storage(1).clone();
 		let mut oldest_nodes_set = gml.0.nodes();
 		oldest_nodes_set.remove(&node_to_isolate);
-		let add = (0..add).map(|_| Random.generate().unwrap()).collect::<Vec<_>>();
+		let add = (0..add).map(|_| Random.generate()).collect::<Vec<_>>();
 		let newest_nodes_set = add.iter().map(|kp| kp.address()).collect::<Vec<_>>();
 		let isolate = ::std::iter::once(node_to_isolate).collect();
 		let ml = MessageLoop::with_gml::<Adapter>(gml, master, Some(add), None, Some(isolate))
 			.run_at(master).unwrap();
-		let new_key_version = ml.ml.key_storage(0).get(&Default::default())
+		let dummy_doc = [1u8; 32].into();
+		let new_key_version = ml.ml.key_storage(0).get(&dummy_doc)
 			.unwrap().unwrap().last_version().unwrap().hash;
 
 		// now let's add back old node so that key becames 2-of-6
@@ -1070,7 +1071,7 @@ pub mod tests {
 		ml.original_key_version = new_key_version;
 		ml.ml.replace_key_storage_of(&node_to_isolate, isolated_key_storage.clone());
 		ml.sessions.get_mut(&node_to_isolate).unwrap().core.key_share =
-			isolated_key_storage.get(&Default::default()).unwrap();
+			isolated_key_storage.get(&dummy_doc).unwrap();
 		ml.sessions.get_mut(&node_to_isolate).unwrap().core.key_storage = isolated_key_storage;
 		let ml = ml.run_at(master).unwrap();
 
@@ -1081,7 +1082,7 @@ pub mod tests {
 		// isolated node has version A, C
 		// new nodes have versions B, C
 		let oldest_key_share = ml.ml.key_storage_of(oldest_nodes_set.iter().nth(0).unwrap())
-			.get(&Default::default()).unwrap().unwrap();
+			.get(&dummy_doc).unwrap().unwrap();
 		debug_assert_eq!(oldest_key_share.versions.len(), 3);
 		let version_a = oldest_key_share.versions[0].hash.clone();
 		let version_b = oldest_key_share.versions[1].hash.clone();
@@ -1089,13 +1090,13 @@ pub mod tests {
 		debug_assert!(version_a != version_b && version_b != version_c);
 
 		debug_assert!(oldest_nodes_set.iter().all(|n| vec![version_a.clone(), version_b.clone(), version_c.clone()] ==
-			ml.ml.key_storage_of(n).get(&Default::default()).unwrap().unwrap()
+			ml.ml.key_storage_of(n).get(&dummy_doc).unwrap().unwrap()
 				.versions.iter().map(|v| v.hash).collect::<Vec<_>>()));
 		debug_assert!(::std::iter::once(&node_to_isolate).all(|n| vec![version_a.clone(), version_c.clone()] ==
-			ml.ml.key_storage_of(n).get(&Default::default()).unwrap().unwrap()
+			ml.ml.key_storage_of(n).get(&dummy_doc).unwrap().unwrap()
 				.versions.iter().map(|v| v.hash).collect::<Vec<_>>()));
 		debug_assert!(newest_nodes_set.iter().all(|n| vec![version_b.clone(), version_c.clone()] ==
-			ml.ml.key_storage_of(n).get(&Default::default()).unwrap().unwrap()
+			ml.ml.key_storage_of(n).get(&dummy_doc).unwrap().unwrap()
 				.versions.iter().map(|v| v.hash).collect::<Vec<_>>()));
 	}
 
@@ -1108,7 +1109,7 @@ pub mod tests {
 
 		// run share add session
 		let master = gml.0.node(0);
-		let add = (0..add).map(|_| Random.generate().unwrap()).collect::<Vec<_>>();
+		let add = (0..add).map(|_| Random.generate()).collect::<Vec<_>>();
 		let isolate = vec![gml.0.node(1), gml.0.node(2)].into_iter().collect();
 		assert_eq!(MessageLoop::with_gml::<Adapter>(gml, master, Some(add), None, Some(isolate))
 			.run_at(master).unwrap_err(), Error::ConsensusUnreachable);

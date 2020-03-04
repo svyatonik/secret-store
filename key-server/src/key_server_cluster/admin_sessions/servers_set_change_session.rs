@@ -1,18 +1,18 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::Arc;
 use std::collections::{BTreeSet, BTreeMap};
@@ -22,7 +22,7 @@ use futures::Oneshot;
 use parking_lot::Mutex;
 use ethereum_types::H256;
 use parity_crypto::publickey::{Address, Signature};
-use parity_secretstore_primitives::key_storage::KeyStorage;
+use primitives::key_storage::KeyStorage;
 use crate::key_server_cluster::{Error, NodeId, SessionId};
 use crate::key_server_cluster::math;
 use crate::key_server_cluster::cluster::Cluster;
@@ -1053,9 +1053,9 @@ pub mod tests {
 	use std::collections::{VecDeque, BTreeMap, BTreeSet};
 	use ethereum_types::H256;
 	use parity_crypto::publickey::{Address, Random, Generator, Signature, KeyPair, public_to_address, sign};
-	use parity_secretstore_primitives::key_storage::KeyStorage;
-	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
-	use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
+	use primitives::key_storage::KeyStorage;
+	use primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
+	use primitives::key_server_key_pair::KeyServerKeyPair;
 	use crate::key_server_cluster::{NodeId, SessionId, Error};
 	use crate::key_server_cluster::cluster_sessions::ClusterSession;
 	use crate::key_server_cluster::cluster::tests::MessageLoop as ClusterMessageLoop;
@@ -1175,7 +1175,7 @@ pub mod tests {
 			let isolated_nodes_ids = isolated_nodes_ids.unwrap_or_default();
 
 			// generate admin key pair
-			let admin_key_pair = Random.generate().unwrap();
+			let admin_key_pair = Random.generate();
 			let admin_address = public_to_address(admin_key_pair.public());
 
 			// all active nodes set
@@ -1199,7 +1199,7 @@ pub mod tests {
 			let meta = ShareChangeSessionMeta {
 				self_node_id: master,
 				master_node_id: master,
-				id: SessionId::default(),
+				id: SessionId::from([1u8; 32]),
 				configured_nodes_count: all_nodes_set.len(),
 				connected_nodes_count: all_nodes_set.len(),
 			};
@@ -1269,8 +1269,8 @@ pub mod tests {
 			let document_secret_plain = math::generate_random_point().unwrap();
 			for n1 in 0..n {
 				for n2 in n1+1..n {
-					let share1 = key_storages[n1].get(&SessionId::default()).unwrap();
-					let share2 = key_storages[n2].get(&SessionId::default()).unwrap();
+					let share1 = key_storages[n1].get(&SessionId::from([1u8; 32])).unwrap();
+					let share2 = key_storages[n2].get(&SessionId::from([1u8; 32])).unwrap();
 
 					let id_number1 = share1.as_ref().unwrap().last_version().unwrap().id_numbers[nodes[n1]].clone();
 					let id_number2 = share1.as_ref().unwrap().last_version().unwrap().id_numbers[nodes[n2]].clone();
@@ -1314,7 +1314,7 @@ pub mod tests {
 		let gml = generate_key(3, 1);
 
 		// add 1 node so that it becames 2-of-4 session
-		let add = vec![Random.generate().unwrap()];
+		let add = vec![Random.generate()];
 		let master = gml.0.node(0);
 		let ml = MessageLoop::with_gml::<Adapter>(gml, master, Some(add), None, None).run_at(master);
 
@@ -1332,7 +1332,7 @@ pub mod tests {
 		// 1) add session is delegated to one of old nodes
 		// 2) key share is pushed to new node
 		// 3) delegated session is returned back to added node
-		let add = vec![Random.generate().unwrap()];
+		let add = vec![Random.generate()];
 		let master = add[0].address();
 		let ml = MessageLoop::with_gml::<Adapter>(gml, master, Some(add), None, None).run_at(master);
 
@@ -1348,7 +1348,7 @@ pub mod tests {
 		// remove 1 node && insert 1 node so that one share is moved
 		let master = gml.0.node(0);
 		let remove: BTreeSet<_> = ::std::iter::once(gml.0.node(1)).collect();
-		let add = vec![Random.generate().unwrap()];
+		let add = vec![Random.generate()];
 		let ml = MessageLoop::with_gml::<Adapter>(gml, master, Some(add), Some(remove.clone()), None).run_at(master);
 
 		// check that secret is still the same as before moving the share
@@ -1357,7 +1357,7 @@ pub mod tests {
 
 		// check that all removed nodes do not own key share
 		assert!(ml.sessions.keys().filter(|k| remove.contains(k))
-			.all(|k| ml.ml.key_storage_of(k).get(&SessionId::default()).unwrap().is_none()));
+			.all(|k| ml.ml.key_storage_of(k).get(&SessionId::from([1u8; 32])).unwrap().is_none()));
 	}
 
 	#[test]
@@ -1376,7 +1376,7 @@ pub mod tests {
 
 		// check that all removed nodes do not own key share
 		assert!(ml.sessions.keys().filter(|k| remove.contains(k))
-			.all(|k| ml.ml.key_storage_of(k).get(&SessionId::default()).unwrap().is_none()));
+			.all(|k| ml.ml.key_storage_of(k).get(&SessionId::from([1u8; 32])).unwrap().is_none()));
 	}
 
 	#[test]
@@ -1396,7 +1396,7 @@ pub mod tests {
 
 		// check that all isolated nodes still OWN key share
 		assert!(ml.sessions.keys().filter(|k| isolate.contains(k))
-			.all(|k| ml.ml.key_storage_of(k).get(&SessionId::default()).unwrap().is_some()));
+			.all(|k| ml.ml.key_storage_of(k).get(&SessionId::from([1u8; 32])).unwrap().is_some()));
 	}
 
 	#[test]
@@ -1412,17 +1412,17 @@ pub mod tests {
 
 		// check that all removed nodes do not own key share
 		assert!(ml.sessions.keys().filter(|k| remove.contains(k))
-			.all(|k| ml.ml.key_storage_of(k).get(&SessionId::default()).unwrap().is_none()));
+			.all(|k| ml.ml.key_storage_of(k).get(&SessionId::from([1u8; 32])).unwrap().is_none()));
 
 		// and now let's add new node (make sure the session is completed, even though key is still irrecoverable)
 		// isolated here are not actually isolated, but removed on the previous step
-		let add = vec![Random.generate().unwrap()];
+		let add = vec![Random.generate()];
 		let master = add[0].address();
 		let ml = ml.and_then::<Adapter>(master, Some(add.clone()), None, Some(remove)).run_at(master);
 
 		// check that all added nodes do not own key share (there's not enough nodes to run share add session)
 		assert!(ml.sessions.keys().filter(|k| add.iter().any(|n| n.address() == **k))
-			.all(|k| ml.ml.key_storage_of(k).get(&SessionId::default()).unwrap().is_none()));
+			.all(|k| ml.ml.key_storage_of(k).get(&SessionId::from([1u8; 32])).unwrap().is_none()));
 	}
 
 	#[test]
@@ -1443,7 +1443,7 @@ pub mod tests {
 		let gml = generate_key(2, 1);
 
 		// insert 1 node so that it becames 2-of-3 session
-		let add = vec![Random.generate().unwrap()];
+		let add = vec![Random.generate()];
 		let master = gml.0.node(0);
 		let ml = MessageLoop::with_gml::<Adapter>(gml, master, Some(add.clone()), None, None)
 			.run_at(master);

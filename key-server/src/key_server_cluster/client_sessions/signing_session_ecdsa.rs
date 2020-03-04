@@ -1,18 +1,18 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeSet, BTreeMap};
 use std::collections::btree_map::Entry;
@@ -22,8 +22,7 @@ use parking_lot::Mutex;
 use parity_crypto::publickey::{Public, Secret, Signature, sign};
 use ethereum_types::H256;
 use log::warn;
-use parity_secretstore_primitives::acl_storage::AclStorage;
-use parity_secretstore_primitives::key_storage::KeyShare;
+use primitives::{acl_storage::AclStorage, key_storage::KeyShare};
 use crate::key_server_cluster::{Error, NodeId, SessionId, SessionMeta, Requester};
 use crate::key_server_cluster::cluster::{Cluster};
 use crate::key_server_cluster::cluster_sessions::{SessionIdWithSubSession, ClusterSession, CompletionSignal};
@@ -1074,11 +1073,13 @@ mod tests {
 	use std::sync::Arc;
 	use ethereum_types::H256;
 	use parity_crypto::publickey::{Random, Generator, Public, verify_public, public_to_address};
-	use parity_secretstore_primitives::key_storage::KeyStorage;
-	use crate::key_server_cluster::{SessionId, Error};
+	use primitives::key_storage::KeyStorage;
+	use crate::key_server_cluster::{SessionId, Error, ServerKeyId};
 	use crate::key_server_cluster::cluster::tests::{MessageLoop as ClusterMessageLoop};
 	use crate::key_server_cluster::signing_session_ecdsa::SessionImpl;
 	use crate::key_server_cluster::generation_session::tests::MessageLoop as GenerationMessageLoop;
+
+	const DUMMY_SESSION_ID: [u8; 32] = [1u8; 32];
 
 	#[derive(Debug)]
 	pub struct MessageLoop(pub ClusterMessageLoop);
@@ -1093,21 +1094,21 @@ mod tests {
 
 		pub fn init_with_version(self, key_version: Option<H256>) -> Result<(Self, Public, H256), Error> {
 			let message_hash = H256::random();
-			let requester = Random.generate().unwrap();
-			let signature = parity_crypto::publickey::sign(requester.secret(), &SessionId::default()).unwrap();
+			let requester = Random.generate();
+			let signature = parity_crypto::publickey::sign(requester.secret(), &SessionId::from(DUMMY_SESSION_ID)).unwrap();
 			self.0.cluster(0).client()
-				.new_ecdsa_signing_session(Default::default(), signature.into(), key_version, message_hash)
+				.new_ecdsa_signing_session(SessionId::from(DUMMY_SESSION_ID), signature.into(), key_version, message_hash)
 				.map(|_| (self, *requester.public(), message_hash))
 		}
 
 		pub fn init(self) -> Result<(Self, Public, H256), Error> {
-			let key_version = self.0.key_storage(0).get(&Default::default())
+			let key_version = self.0.key_storage(0).get(&ServerKeyId::from(DUMMY_SESSION_ID))
 				.unwrap().unwrap().versions.iter().last().unwrap().hash;
 			self.init_with_version(Some(key_version))
 		}
 
 		pub fn init_delegated(self) -> Result<(Self, Public, H256), Error> {
-			self.0.key_storage(0).remove(&Default::default()).unwrap();
+			self.0.key_storage(0).remove(&ServerKeyId::from(DUMMY_SESSION_ID)).unwrap();
 			self.init_with_version(None)
 		}
 
@@ -1142,7 +1143,7 @@ mod tests {
 			let (ml, _, message) = MessageLoop::new(num_nodes, threshold).unwrap().init().unwrap();
 			ml.0.loop_until(|| ml.0.is_empty());
 
-			let signer_public = ml.0.key_storage(0).get(&Default::default()).unwrap().unwrap().public;
+			let signer_public = ml.0.key_storage(0).get(&ServerKeyId::from(DUMMY_SESSION_ID)).unwrap().unwrap().public;
 			let signature = ml.session_at(0).wait().unwrap();
 			assert!(verify_public(&signer_public, &signature, &message).unwrap());
 		}
@@ -1154,7 +1155,7 @@ mod tests {
 
 		// we need at least 3-of-4 nodes to agree to reach consensus
 		// let's say 1 of 4 nodes disagee
-		ml.0.acl_storage(1).forbid(public_to_address(&requester), Default::default());
+		ml.0.acl_storage(1).forbid(public_to_address(&requester), ServerKeyId::from(DUMMY_SESSION_ID));
 
 		// then consensus reachable, but single node will disagree
 		ml.ensure_completed();
@@ -1166,7 +1167,7 @@ mod tests {
 
 		// we need at least 3-of-4 nodes to agree to reach consensus
 		// let's say 1 of 4 nodes (here: master) disagee
-		ml.0.acl_storage(0).forbid(public_to_address(&requester), Default::default());
+		ml.0.acl_storage(0).forbid(public_to_address(&requester), ServerKeyId::from(DUMMY_SESSION_ID));
 
 		// then consensus reachable, but single node will disagree
 		ml.ensure_completed();

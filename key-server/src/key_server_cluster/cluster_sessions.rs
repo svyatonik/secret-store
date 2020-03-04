@@ -1,21 +1,21 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::time::{Duration, Instant};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::{VecDeque, BTreeMap, BTreeSet};
 use futures::{oneshot, Oneshot, Complete, Future};
@@ -23,9 +23,9 @@ use lazy_static::lazy_static;
 use parking_lot::{Mutex, RwLock, Condvar};
 use ethereum_types::{Address, H256};
 use parity_crypto::publickey::Secret;
-use parity_secretstore_primitives::acl_storage::AclStorage;
-use parity_secretstore_primitives::key_storage::KeyStorage;
-use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
+use primitives::acl_storage::AclStorage;
+use primitives::key_storage::KeyStorage;
+use primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::network::ConnectionProvider;
 use crate::key_server_cluster::{Error, NodeId, SessionId};
 use crate::key_server_cluster::cluster::{Cluster, ClusterView};
@@ -447,7 +447,6 @@ impl<S, SC> ClusterSessionsContainer<S, SC> where S: ClusterSession, SC: Cluster
 	fn do_remove(&self, session_id: &S::Id, sessions: &mut BTreeMap<S::Id, QueuedSession<S>>) {
 		if !self.preserve_sessions.load(Ordering::Relaxed) {
 			if let Some(session) = sessions.remove(session_id) {
-println!("=== ClusterSessions.do_remove");
 				self.container_state.lock().on_session_completed();
 				self.notify_listeners(|l| l.on_session_removed(session.session.clone()));
 			}
@@ -455,20 +454,11 @@ println!("=== ClusterSessions.do_remove");
 	}
 
 	fn notify_listeners<F: Fn(&dyn ClusterSessionsListener<S>) -> ()>(&self, callback: F) {
-		let mut listeners = self.listeners.lock();
+		let listeners = self.listeners.lock();
 		let mut listener_index = 0;
 		while listener_index < listeners.len() {
 			callback(&*listeners[listener_index]);
 			listener_index += 1;
-			/*match listeners[listener_index].upgrade() {
-				Some(listener) => {
-					callback(&*listener);
-					listener_index += 1;
-				},
-				None => {
-					listeners.swap_remove(listener_index);
-				},
-			}*/
 		}
 	}
 }
@@ -686,9 +676,9 @@ mod tests {
 	use std::sync::Arc;
 	use std::sync::atomic::{AtomicUsize, Ordering};
 	use parity_crypto::publickey::{Random, Generator};
-	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
-	use parity_secretstore_primitives::key_storage::InMemoryKeyStorage;
-	use parity_secretstore_primitives::key_server_key_pair::{KeyServerKeyPair, InMemoryKeyServerKeyPair};
+	use primitives::acl_storage::InMemoryPermissiveAclStorage;
+	use primitives::key_storage::InMemoryKeyStorage;
+	use primitives::key_server_key_pair::{KeyServerKeyPair, InMemoryKeyServerKeyPair};
 	use crate::key_server_cluster::{Error, math};
 	use crate::key_server_cluster::connection_trigger::SimpleServersSetChangeSessionCreatorConnector;
 	use crate::key_server_cluster::cluster::tests::DummyCluster;
@@ -697,7 +687,7 @@ mod tests {
 		ClusterSessionsContainerState, SESSION_TIMEOUT_INTERVAL};
 
 	pub fn make_cluster_sessions() -> ClusterSessions {
-		let key_pair = Random.generate().unwrap();
+		let key_pair = Random.generate();
 		let self_key_pair = Arc::new(InMemoryKeyServerKeyPair::new(key_pair.clone()));
 		let admin_address = Some(math::generate_random_address().unwrap());
 		let key_storage = Arc::new(InMemoryKeyStorage::default());

@@ -1,18 +1,18 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::Arc;
 use std::collections::{BTreeSet, BTreeMap};
@@ -21,7 +21,7 @@ use log::warn;
 use parity_crypto::publickey::Secret;
 use futures::Oneshot;
 use parking_lot::Mutex;
-use parity_secretstore_primitives::key_storage::KeyShare;
+use primitives::key_storage::KeyShare;
 use crate::key_server_cluster::{Error, SessionId, NodeId};
 use crate::key_server_cluster::cluster::Cluster;
 use crate::key_server_cluster::cluster_sessions::{SessionIdWithSubSession, ClusterSession, CompletionSignal};
@@ -620,7 +620,7 @@ mod tests {
 	use std::collections::{VecDeque, BTreeMap, BTreeSet};
 	use ethereum_types::{H512, H160, Address};
 	use parity_crypto::publickey::public_to_address;
-	use parity_secretstore_primitives::key_storage::{KeyStorage, InMemoryKeyStorage, KeyShare, KeyShareVersion};
+	use primitives::key_storage::{KeyStorage, InMemoryKeyStorage, KeyShare, KeyShareVersion};
 	use crate::key_server_cluster::{NodeId, SessionId, Error};
 	use crate::key_server_cluster::math;
 	use crate::key_server_cluster::cluster::Cluster;

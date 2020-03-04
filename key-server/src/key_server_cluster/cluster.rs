@@ -1,28 +1,28 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::Arc;
 use std::collections::BTreeSet;
 use parity_crypto::publickey::{Public, Signature, Random, Generator};
 use ethereum_types::{Address, H256};
 use log::trace;
-use parity_secretstore_primitives::acl_storage::AclStorage;
-use parity_secretstore_primitives::key_storage::KeyStorage;
-use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
-use parity_secretstore_primitives::service::{
+use primitives::acl_storage::AclStorage;
+use primitives::key_storage::KeyStorage;
+use primitives::key_server_key_pair::KeyServerKeyPair;
+use primitives::service::{
 	ServiceTasksListener,
 	ServiceTasksListenerRegistrar,
 };
@@ -317,7 +317,7 @@ impl<C: ConnectionManager> ClusterClientImpl<C> {
 		let mut connected_nodes = self.data.connections.provider().connected_nodes()?;
 		connected_nodes.insert(self.data.self_key_pair.address());
 
-		let access_key = Random.generate()?.secret().clone();
+		let access_key = Random.generate().secret().clone();
 		let session_id = SessionIdWithSubSession::new(session_id, access_key);
 		let cluster = create_cluster_view(self.data.self_key_pair.clone(), self.data.connections.provider(), false)?;
 		let session = self.data.sessions.negotiation_sessions.insert(cluster, self.data.self_key_pair.address(), session_id.clone(), None, false, None)?;
@@ -378,7 +378,7 @@ impl<C: ConnectionManager> ClusterClient for ClusterClientImpl<C> {
 		let mut connected_nodes = self.data.connections.provider().connected_nodes()?;
 		connected_nodes.insert(self.data.self_key_pair.address().clone());
 
-		let access_key = Random.generate()?.secret().clone();
+		let access_key = Random.generate().secret().clone();
 		let session_id = SessionIdWithSubSession::new(session_id, access_key);
 		let cluster = create_cluster_view(self.data.self_key_pair.clone(), self.data.connections.provider(), false)?;
 		let session = self.data.sessions.decryption_sessions.insert(cluster, self.data.self_key_pair.address().clone(),
@@ -416,7 +416,7 @@ impl<C: ConnectionManager> ClusterClient for ClusterClientImpl<C> {
 		let mut connected_nodes = self.data.connections.provider().connected_nodes()?;
 		connected_nodes.insert(self.data.self_key_pair.address().clone());
 
-		let access_key = Random.generate()?.secret().clone();
+		let access_key = Random.generate().secret().clone();
 		let session_id = SessionIdWithSubSession::new(session_id, access_key);
 		let cluster = create_cluster_view(self.data.self_key_pair.clone(), self.data.connections.provider(), false)?;
 		let session = self.data.sessions.schnorr_signing_sessions.insert(cluster, self.data.self_key_pair.address(), session_id.clone(), None, false, Some(requester))?;
@@ -448,7 +448,7 @@ impl<C: ConnectionManager> ClusterClient for ClusterClientImpl<C> {
 		let mut connected_nodes = self.data.connections.provider().connected_nodes()?;
 		connected_nodes.insert(self.data.self_key_pair.address());
 
-		let access_key = Random.generate()?.secret().clone();
+		let access_key = Random.generate().secret().clone();
 		let session_id = SessionIdWithSubSession::new(session_id, access_key);
 		let cluster = create_cluster_view(self.data.self_key_pair.clone(), self.data.connections.provider(), false)?;
 		let session = self.data.sessions.ecdsa_signing_sessions.insert(cluster, self.data.self_key_pair.address(), session_id.clone(), None, false, Some(requester))?;
@@ -529,7 +529,7 @@ impl<C: ConnectionManager> ClusterClient for ClusterClientImpl<C> {
 
 impl<C: ConnectionManager> ServiceTasksListenerRegistrar for ClusterSessionListenerRegistrar<C> {
 	fn register_listener(&self, listener: Arc<dyn ServiceTasksListener>) {
-		use parity_secretstore_primitives::key_server::{
+		use primitives::key_server::{
 			ServerKeyGenerationResult,
 			ServerKeyGenerationParams,
 			ServerKeyGenerationArtifacts,
@@ -696,12 +696,12 @@ pub mod tests {
 	use parking_lot::{Mutex, RwLock};
 	use ethereum_types::{Address, H256};
 	use parity_crypto::publickey::{Random, Generator, Public, Signature, sign};
-	use parity_secretstore_primitives::acl_storage::{AclStorage, InMemoryPermissiveAclStorage};
-	use parity_secretstore_primitives::key_server_set::{KeyServerSet, InMemoryKeyServerSet};
-	use parity_secretstore_primitives::key_storage::{KeyStorage, InMemoryKeyStorage};
-	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
-	use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
-	use parity_secretstore_primitives::service::ServiceTasksListenerRegistrar;
+	use primitives::acl_storage::{AclStorage, InMemoryPermissiveAclStorage};
+	use primitives::key_server_set::{KeyServerSet, InMemoryKeyServerSet};
+	use primitives::key_storage::{KeyStorage, InMemoryKeyStorage};
+	use primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
+	use primitives::key_server_key_pair::KeyServerKeyPair;
+	use primitives::service::ServiceTasksListenerRegistrar;
 	use crate::network::ConnectionManager;
 	use crate::network::in_memory::{InMemoryMessagesQueue, InMemoryConnectionsManager, new_in_memory_connections};
 	use crate::key_server_cluster::{NodeId, SessionId, Requester, Error};
@@ -1098,7 +1098,7 @@ pub mod tests {
 		let ports_begin = 0;
 		let messages = Arc::new(Mutex::new(VecDeque::new()));
 		let key_pairs: Vec<_> = (0..num_nodes)
-			.map(|_| Arc::new(InMemoryKeyServerKeyPair::new(Random.generate().unwrap()))).collect();
+			.map(|_| Arc::new(InMemoryKeyServerKeyPair::new(Random.generate()))).collect();
 		let key_storages: Vec<_> = (0..num_nodes).map(|_| Arc::new(InMemoryKeyStorage::default())).collect();
 		let acl_storages: Vec<_> = (0..num_nodes).map(|_| Arc::new(InMemoryPermissiveAclStorage::default())).collect();
 		let clusters: Vec<_> = (0..num_nodes).into_iter()
@@ -1129,7 +1129,7 @@ pub mod tests {
 	fn cluster_wont_start_generation_session_if_not_fully_connected() {
 		let ml = make_clusters(3);
 		ml.cluster(0).data.connections.disconnect(ml.cluster(0).data.self_key_pair.address());
-		match ml.cluster(0).client().new_generation_session(SessionId::default(), Default::default(), Default::default(), 1) {
+		match ml.cluster(0).client().new_generation_session(SessionId::from([1u8; 32]), Default::default(), Default::default(), 1) {
 			Err(Error::NodeDisconnected) => (),
 			Err(e) => panic!("unexpected error {:?}", e),
 			_ => panic!("unexpected success"),
@@ -1146,18 +1146,18 @@ pub mod tests {
 
 		// start && wait for generation session to fail
 		let session = ml.cluster(0).client()
-			.new_generation_session(SessionId::default(), Default::default(), Default::default(), 1).unwrap().session;
+			.new_generation_session(SessionId::from([1u8; 32]), Default::default(), Default::default(), 1).unwrap().session;
 		ml.loop_until(|| session.joint_public_and_secret().is_some()
-			&& ml.cluster(0).client().generation_session(&SessionId::default()).is_none());
+			&& ml.cluster(0).client().generation_session(&SessionId::from([1u8; 32])).is_none());
 		assert!(session.joint_public_and_secret().unwrap().is_err());
 
 		// check that faulty session is either removed from all nodes, or nonexistent (already removed)
 		for i in 1..3 {
-			if let Some(session) = ml.cluster(i).client().generation_session(&SessionId::default()) {
+			if let Some(session) = ml.cluster(i).client().generation_session(&SessionId::from([1u8; 32])) {
 				// wait for both session completion && session removal (session completion event is fired
 				// before session is removed from its own container by cluster)
 				ml.loop_until(|| session.joint_public_and_secret().is_some()
-					&& ml.cluster(i).client().generation_session(&SessionId::default()).is_none());
+					&& ml.cluster(i).client().generation_session(&SessionId::from([1u8; 32])).is_none());
 				assert!(session.joint_public_and_secret().unwrap().is_err());
 			}
 		}
@@ -1173,19 +1173,19 @@ pub mod tests {
 
 		// start && wait for generation session to fail
 		let session = ml.cluster(0).client()
-			.new_generation_session(SessionId::default(), Default::default(), Default::default(), 1).unwrap().session;
+			.new_generation_session(SessionId::from([1u8; 32]), Default::default(), Default::default(), 1).unwrap().session;
 		ml.loop_until(|| session.joint_public_and_secret().is_some()
-			&& ml.cluster(0).client().generation_session(&SessionId::default()).is_none());
+			&& ml.cluster(0).client().generation_session(&SessionId::from([1u8; 32])).is_none());
 		assert!(session.joint_public_and_secret().unwrap().is_err());
 
 		// check that faulty session is either removed from all nodes, or nonexistent (already removed)
 		for i in 1..3 {
-			if let Some(session) = ml.cluster(i).client().generation_session(&SessionId::default()) {
+			if let Some(session) = ml.cluster(i).client().generation_session(&SessionId::from([1u8; 32])) {
 				let session = session.clone();
 				// wait for both session completion && session removal (session completion event is fired
 				// before session is removed from its own container by cluster)
 				ml.loop_until(|| session.joint_public_and_secret().is_some()
-					&& ml.cluster(i).client().generation_session(&SessionId::default()).is_none());
+					&& ml.cluster(i).client().generation_session(&SessionId::from([1u8; 32])).is_none());
 				assert!(session.joint_public_and_secret().unwrap().is_err());
 			}
 		}
@@ -1198,22 +1198,22 @@ pub mod tests {
 
 		// start && wait for generation session to complete
 		let session = ml.cluster(0).client()
-			.new_generation_session(SessionId::default(), Default::default(), Default::default(), 1).unwrap().session;
+			.new_generation_session(SessionId::from([1u8; 32]), Default::default(), Default::default(), 1).unwrap().session;
 		ml.loop_until(|| (session.state() == GenerationSessionState::Finished
 			|| session.state() == GenerationSessionState::Failed)
-			&& ml.cluster(0).client().generation_session(&SessionId::default()).is_none());
+			&& ml.cluster(0).client().generation_session(&SessionId::from([1u8; 32])).is_none());
 		assert!(session.joint_public_and_secret().unwrap().is_ok());
 
 		// check that on non-master nodes session is either:
 		// already removed
 		// or it is removed right after completion
 		for i in 1..3 {
-			if let Some(session) = ml.cluster(i).client().generation_session(&SessionId::default()) {
+			if let Some(session) = ml.cluster(i).client().generation_session(&SessionId::from([1u8; 32])) {
 				// run to completion if completion message is still on the way
 				// AND check that it is actually removed from cluster sessions
 				ml.loop_until(|| (session.state() == GenerationSessionState::Finished
 					|| session.state() == GenerationSessionState::Failed)
-					&& ml.cluster(i).client().generation_session(&SessionId::default()).is_none());
+					&& ml.cluster(i).client().generation_session(&SessionId::from([1u8; 32])).is_none());
 			}
 		}
 	}
@@ -1227,12 +1227,12 @@ pub mod tests {
 		{
 			// try to start generation session => fail in initialization
 			assert_eq!(
-				client.new_generation_session(SessionId::default(), None, Default::default(), 100).map(|_| ()),
+				client.new_generation_session(SessionId::from([1u8; 32]), None, Default::default(), 100).map(|_| ()),
 				Err(Error::NotEnoughNodesForThreshold));
 
 			// try to start generation session => fails in initialization
 			assert_eq!(
-				client.new_generation_session(SessionId::default(), None, Default::default(), 100).map(|_| ()),
+				client.new_generation_session(SessionId::from([1u8; 32]), None, Default::default(), 100).map(|_| ()),
 				Err(Error::NotEnoughNodesForThreshold));
 
 			assert!(ml.cluster(0).data.sessions.generation_sessions.is_empty());
@@ -1263,23 +1263,25 @@ pub mod tests {
 	fn schnorr_signing_session_completes_if_node_does_not_have_a_share() {
 		let _ = ::env_logger::try_init();
 		let ml = make_clusters(3);
+		let dummy_session_id = SessionId::from([1u8; 32]);
 
 		// start && wait for generation session to complete
 		let session = ml.cluster(0).client().
-			new_generation_session(SessionId::default(), Default::default(), Default::default(), 1).unwrap().session;
+			new_generation_session(dummy_session_id, Default::default(), Default::default(), 1).unwrap().session;
 		ml.loop_until(|| (session.state() == GenerationSessionState::Finished
 			|| session.state() == GenerationSessionState::Failed)
-			&& ml.cluster(0).client().generation_session(&SessionId::default()).is_none());
+			&& ml.cluster(0).client().generation_session(&dummy_session_id).is_none());
 		assert!(session.joint_public_and_secret().unwrap().is_ok());
 
 		// now remove share from node2
 		assert!((0..3).all(|i| ml.cluster(i).data.sessions.generation_sessions.is_empty()));
-		ml.cluster(2).data.key_storage.remove(&Default::default()).unwrap();
+		ml.cluster(2).data.key_storage.remove(&dummy_session_id).unwrap();
 
 		// and try to sign message with generated key
-		let signature = sign(Random.generate().unwrap().secret(), &Default::default()).unwrap();
+		let dummy_message = [1u8; 32].into();
+		let signature = sign(Random.generate().secret(), &dummy_message).unwrap();
 		let session0 = ml.cluster(0).client()
-			.new_schnorr_signing_session(Default::default(), signature.into(), None, Default::default()).unwrap();
+			.new_schnorr_signing_session(dummy_session_id, signature.into(), None, Default::default()).unwrap();
 		let session = ml.cluster(0).data.sessions.schnorr_signing_sessions.first().unwrap();
 
 		ml.loop_until(|| session.is_finished() && (0..3).all(|i|
@@ -1287,9 +1289,9 @@ pub mod tests {
 		session0.into_wait_future().wait().unwrap();
 
 		// and try to sign message with generated key using node that has no key share
-		let signature = sign(Random.generate().unwrap().secret(), &Default::default()).unwrap();
+		let signature = sign(Random.generate().secret(), &dummy_message).unwrap();
 		let session2 = ml.cluster(2).client()
-			.new_schnorr_signing_session(Default::default(), signature.into(), None, Default::default()).unwrap();
+			.new_schnorr_signing_session(dummy_session_id, signature.into(), None, Default::default()).unwrap();
 		let session = ml.cluster(2).data.sessions.schnorr_signing_sessions.first().unwrap();
 
 		ml.loop_until(|| session.is_finished()  && (0..3).all(|i|
@@ -1297,12 +1299,12 @@ pub mod tests {
 		session2.into_wait_future().wait().unwrap();
 
 		// now remove share from node1
-		ml.cluster(1).data.key_storage.remove(&Default::default()).unwrap();
+		ml.cluster(1).data.key_storage.remove(&dummy_session_id).unwrap();
 
 		// and try to sign message with generated key
-		let signature = sign(Random.generate().unwrap().secret(), &Default::default()).unwrap();
+		let signature = sign(Random.generate().secret(), &dummy_message).unwrap();
 		let session1 = ml.cluster(0).client()
-			.new_schnorr_signing_session(Default::default(), signature.into(), None, Default::default()).unwrap();
+			.new_schnorr_signing_session(dummy_session_id, signature.into(), None, Default::default()).unwrap();
 		let session = ml.cluster(0).data.sessions.schnorr_signing_sessions.first().unwrap();
 
 		ml.loop_until(|| session.is_finished());
@@ -1313,23 +1315,25 @@ pub mod tests {
 	fn ecdsa_signing_session_completes_if_node_does_not_have_a_share() {
 		let _ = ::env_logger::try_init();
 		let ml = make_clusters(4);
+		let dummy_session_id = SessionId::from([1u8; 32]);
 
 		// start && wait for generation session to complete
 		let session = ml.cluster(0).client()
-			.new_generation_session(SessionId::default(), Default::default(), Default::default(), 1).unwrap().session;
+			.new_generation_session(dummy_session_id, Default::default(), Default::default(), 1).unwrap().session;
 		ml.loop_until(|| (session.state() == GenerationSessionState::Finished
 			|| session.state() == GenerationSessionState::Failed)
-			&& ml.cluster(0).client().generation_session(&SessionId::default()).is_none());
+			&& ml.cluster(0).client().generation_session(&dummy_session_id).is_none());
 		assert!(session.joint_public_and_secret().unwrap().is_ok());
 
 		// now remove share from node2
 		assert!((0..3).all(|i| ml.cluster(i).data.sessions.generation_sessions.is_empty()));
-		ml.cluster(2).data.key_storage.remove(&Default::default()).unwrap();
+		ml.cluster(2).data.key_storage.remove(&dummy_session_id).unwrap();
 
 		// and try to sign message with generated key
-		let signature = sign(Random.generate().unwrap().secret(), &Default::default()).unwrap();
+		let dummy_message = [1u8; 32].into();
+		let signature = sign(Random.generate().secret(), &dummy_message).unwrap();
 		let session0 = ml.cluster(0).client()
-			.new_ecdsa_signing_session(Default::default(), signature.into(), None, H256::random()).unwrap();
+			.new_ecdsa_signing_session(dummy_session_id, signature.into(), None, H256::random()).unwrap();
 		let session = ml.cluster(0).data.sessions.ecdsa_signing_sessions.first().unwrap();
 
 		ml.loop_until(|| session.is_finished() && (0..3).all(|i|
@@ -1337,21 +1341,21 @@ pub mod tests {
 		session0.into_wait_future().wait().unwrap();
 
 		// and try to sign message with generated key using node that has no key share
-		let signature = sign(Random.generate().unwrap().secret(), &Default::default()).unwrap();
+		let signature = sign(Random.generate().secret(), &dummy_message).unwrap();
 		let session2 = ml.cluster(2).client()
-			.new_ecdsa_signing_session(Default::default(), signature.into(), None, H256::random()).unwrap();
+			.new_ecdsa_signing_session(dummy_session_id, signature.into(), None, H256::random()).unwrap();
 		let session = ml.cluster(2).data.sessions.ecdsa_signing_sessions.first().unwrap();
 		ml.loop_until(|| session.is_finished()  && (0..3).all(|i|
 			ml.cluster(i).data.sessions.ecdsa_signing_sessions.is_empty()));
 		session2.into_wait_future().wait().unwrap();
 
 		// now remove share from node1
-		ml.cluster(1).data.key_storage.remove(&Default::default()).unwrap();
+		ml.cluster(1).data.key_storage.remove(&dummy_session_id).unwrap();
 
 		// and try to sign message with generated key
-		let signature = sign(Random.generate().unwrap().secret(), &Default::default()).unwrap();
+		let signature = sign(Random.generate().secret(), &dummy_message).unwrap();
 		let session1 = ml.cluster(0).client()
-			.new_ecdsa_signing_session(Default::default(), signature.into(), None, H256::random()).unwrap();
+			.new_ecdsa_signing_session(dummy_session_id, signature.into(), None, H256::random()).unwrap();
 		let session = ml.cluster(0).data.sessions.ecdsa_signing_sessions.first().unwrap();
 		ml.loop_until(|| session.is_finished());
 		session1.into_wait_future().wait().unwrap_err();

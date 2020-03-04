@@ -1,18 +1,18 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 ///! Given: two nodes each holding its own `self_key_pair`.
 ///!
@@ -40,7 +40,7 @@ use tokio_io::{AsyncRead, AsyncWrite};
 use parity_crypto::publickey::ecdh::agree;
 use parity_crypto::publickey::{Random, Generator, KeyPair, Public, Signature, verify_address, sign, recover};
 use ethereum_types::H256;
-use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
+use primitives::key_server_key_pair::KeyServerKeyPair;
 use crate::key_server_cluster::{NodeId, Error};
 use crate::key_server_cluster::message::{Message, ClusterMessage, NodePublicKey, NodePrivateKeySignature};
 use crate::key_server_cluster::io::{write_message, write_encrypted_message, WriteMessage, ReadMessage,
@@ -48,9 +48,11 @@ use crate::key_server_cluster::io::{write_message, write_encrypted_message, Writ
 
 /// Start handshake procedure with another node from the cluster.
 pub fn handshake<A>(a: A, self_key_pair: Arc<dyn KeyServerKeyPair>, trusted_nodes: BTreeSet<NodeId>) -> Handshake<A> where A: AsyncWrite + AsyncRead {
-	let init_data = Random.generate().map(|kp| *kp.secret().clone()).map_err(Into::into)
-		.and_then(|cp| Random.generate().map(|kp| (cp, kp)).map_err(Into::into));
-	handshake_with_init_data(a, init_data, self_key_pair, trusted_nodes)
+	let init_data = (
+		*Random.generate().secret().clone(),
+		Random.generate(),
+	);
+	handshake_with_init_data(a, Ok(init_data), self_key_pair, trusted_nodes)
 }
 
 /// Start handshake procedure with another node from the cluster and given plain confirmation + session key pair.
@@ -81,22 +83,16 @@ pub fn handshake_with_init_data<A>(a: A, init_data: Result<(H256, KeyPair), Erro
 
 /// Wait for handshake procedure to be started by another node from the cluster.
 pub fn accept_handshake<A>(a: A, self_key_pair: Arc<dyn KeyServerKeyPair>) -> Handshake<A> where A: AsyncWrite + AsyncRead {
-	let self_confirmation_plain = Random.generate().map(|kp| *kp.secret().clone()).map_err(Into::into);
-	let handshake_input_data = self_confirmation_plain
-		.and_then(|cp| Random.generate().map(|kp| (cp, kp)).map_err(Into::into));
-
-	let (error, cp, kp, state) = match handshake_input_data {
-		Ok((cp, kp)) => (None, cp, Some(kp), HandshakeState::ReceivePublicKey(read_message(a))),
-		Err(err) => (Some((a, Err(err))), Default::default(), None, HandshakeState::Finished),
-	};
+	let self_confirmation_plain = *Random.generate().secret().clone();
+	let handshake_input_data = Random.generate();
 
 	Handshake {
 		is_active: false,
-		error: error,
-		state: state,
+		error: None,
+		state: HandshakeState::ReceivePublicKey(read_message(a)),
 		self_key_pair: self_key_pair,
-		self_session_key_pair: kp,
-		self_confirmation_plain: cp,
+		self_session_key_pair: Some(handshake_input_data),
+		self_confirmation_plain,
 		trusted_nodes: None,
 		peer_node_id: None,
 		peer_session_public: None,
@@ -320,7 +316,7 @@ mod tests {
 	use futures::Future;
 	use parity_crypto::publickey::{Random, Generator, sign};
 	use ethereum_types::H256;
-	use parity_secretstore_primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
+	use primitives::key_server_key_pair::InMemoryKeyServerKeyPair;
 	use crate::key_server_cluster::io::message::tests::TestIo;
 	use crate::key_server_cluster::message::{Message, ClusterMessage, NodePublicKey, NodePrivateKeySignature};
 	use super::{handshake_with_init_data, accept_handshake, HandshakeResult};
@@ -328,8 +324,8 @@ mod tests {
 	fn prepare_test_io() -> (H256, TestIo) {
 		let mut io = TestIo::new();
 
-		let self_confirmation_plain = *Random.generate().unwrap().secret().clone();
-		let peer_confirmation_plain = *Random.generate().unwrap().secret().clone();
+		let self_confirmation_plain = *Random.generate().secret().clone();
+		let peer_confirmation_plain = *Random.generate().secret().clone();
 
 		let self_confirmation_signed = sign(io.peer_key_pair().secret(), &self_confirmation_plain).unwrap();
 		let peer_confirmation_signed = sign(io.peer_session_key_pair().secret(), &peer_confirmation_plain).unwrap();

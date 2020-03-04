@@ -1,18 +1,18 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeSet, BTreeMap};
 use std::sync::Arc;
@@ -20,14 +20,14 @@ use ethereum_types::H256;
 use log::{trace, warn};
 use parity_crypto::publickey::Address;
 use parking_lot::Mutex;
-use parity_secretstore_primitives::key_server_set::{KeyServerSet, KeyServerSetSnapshot, KeyServerSetMigration};
+use primitives::key_server_set::{KeyServerSet, KeyServerSetSnapshot, KeyServerSetMigration};
 use crate::key_server_cluster::cluster::ServersSetChangeParams;
 use crate::key_server_cluster::cluster_sessions::{AdminSession, ClusterSession};
 use crate::key_server_cluster::jobs::servers_set_change_access_job::ordered_nodes_hash;
 use crate::key_server_cluster::connection_trigger::{Maintain, ConnectionsAction, ConnectionTrigger,
 	ServersSetChangeSessionCreatorConnector};
 use crate::types::{Error, NodeId};
-use parity_secretstore_primitives::key_server_key_pair::KeyServerKeyPair;
+use primitives::key_server_key_pair::KeyServerKeyPair;
 
 /// Key servers set change trigger with automated migration procedure.
 pub struct ConnectionTriggerWithMigration<NetworkAddress> {
@@ -456,7 +456,7 @@ fn is_migration_required<NetworkAddress>(current_set: &BTreeMap<NodeId, NetworkA
 #[cfg(test)]
 mod tests {
 	use std::{collections::BTreeMap, net::SocketAddr};
-	use parity_secretstore_primitives::key_server_set::{KeyServerSetSnapshot, KeyServerSetMigration};
+	use primitives::key_server_set::{KeyServerSetSnapshot, KeyServerSetMigration};
 	use crate::key_server_cluster::connection_trigger::ConnectionsAction;
 	use super::{MigrationState, SessionState, SessionAction, migration_state, maintain_session,
 		maintain_connections, select_master_node};

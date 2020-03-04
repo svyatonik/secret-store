@@ -1,18 +1,18 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeSet, BTreeMap};
 use std::sync::Arc;
@@ -21,8 +21,7 @@ use parking_lot::Mutex;
 use ethereum_types::{Address, H256};
 use log::warn;
 use parity_crypto::publickey::Secret;
-use parity_secretstore_primitives::acl_storage::AclStorage;
-use parity_secretstore_primitives::key_storage::KeyShare;
+use primitives::{acl_storage::AclStorage, key_storage::KeyShare};
 use crate::key_server_cluster::{Error, NodeId, SessionId, Requester,
 	EncryptedDocumentKeyShadow, SessionMeta};
 use crate::key_server_cluster::cluster::Cluster;
@@ -832,7 +831,7 @@ impl JobTransport for DecryptionJobTransport {
 
 #[cfg(test)]
 pub fn create_default_decryption_session() -> Arc<SessionImpl> {
-	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
+	use primitives::acl_storage::InMemoryPermissiveAclStorage;
 	use crate::key_server_cluster::cluster::tests::DummyCluster;
 	use ethereum_types::H512;
 
@@ -857,9 +856,11 @@ pub fn create_default_decryption_session() -> Arc<SessionImpl> {
 mod tests {
 	use std::sync::Arc;
 	use std::collections::{BTreeMap, VecDeque};
-	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
+	use primitives::{
+		acl_storage::InMemoryPermissiveAclStorage,
+		key_storage::{KeyShare, KeyShareVersion},
+	};
 	use parity_crypto::publickey::{KeyPair, Random, Generator, Public, Secret, public_to_address};
-	use parity_secretstore_primitives::key_storage::{KeyShare, KeyShareVersion};
 	use crate::key_server_cluster::{NodeId, SessionId, Requester,
 		Error, EncryptedDocumentKeyShadow, SessionMeta};
 	use crate::key_server_cluster::cluster::tests::DummyCluster;
@@ -872,11 +873,11 @@ mod tests {
 	use std::str::FromStr;
 
 	const SECRET_PLAIN: &'static str = "d2b57ae7619e070af0af6bc8c703c0cd27814c54d5d6a999cacac0da34ede279ca0d9216e85991029e54e2f0c92ee0bd30237725fa765cbdbfc4529489864c5f";
-
+	const DUMMY_SESSION_ID: [u8; 32]  = [1u8; 32];
 	fn prepare_decryption_sessions() -> (KeyPair, Vec<Arc<DummyCluster>>, Vec<Arc<InMemoryPermissiveAclStorage>>, Vec<SessionImpl>) {
 		// prepare encrypted data + cluster configuration for scheme 4-of-5
-		let session_id = SessionId::default();
-		let access_key = Random.generate().unwrap().secret().clone();
+		let session_id = SessionId::from(DUMMY_SESSION_ID);
+		let access_key = Random.generate().secret().clone();
 		let secret_shares: Vec<Secret> = vec![
 			"834cb736f02d9c968dfaf0c37658a1d86ff140554fc8b59c9fdad5a8cf810eec".parse().unwrap(),
 			"5a3c1d90fafafa66bb808bcc464354a98b05e6b2c95b5f609d4511cdd1b17a0b".parse().unwrap(),
@@ -918,11 +919,11 @@ mod tests {
 			}
 			cluster
 		}).collect();
-		let requester = Random.generate().unwrap();
-		let signature = Some(parity_crypto::publickey::sign(requester.secret(), &SessionId::default()).unwrap());
+		let requester = Random.generate();
+		let signature = Some(parity_crypto::publickey::sign(requester.secret(), &session_id).unwrap());
 		let sessions: Vec<_> = (0..5).map(|i| SessionImpl::new(SessionParams {
 			meta: SessionMeta {
-				id: session_id.clone(),
+				id: session_id,
 				self_node_id: id_numbers.iter().nth(i).clone().unwrap().0,
 				master_node_id: id_numbers.iter().nth(0).clone().unwrap().0,
 				threshold: encrypted_datas[i].threshold,
@@ -984,33 +985,36 @@ mod tests {
 	fn constructs_in_cluster_of_single_node() {
 		let mut nodes = BTreeMap::new();
 		let self_node_id = math::generate_random_address().unwrap();
-		nodes.insert(self_node_id, Random.generate().unwrap().secret().clone());
-		match SessionImpl::new(SessionParams {
+		nodes.insert(self_node_id, Random.generate().secret().clone());
+		let msg = [1u8; 32].into();
+		let requester = Some(Requester::Signature(parity_crypto::publickey::sign(Random.generate().secret(), &msg).unwrap()));
+		let params = SessionParams {
 			meta: SessionMeta {
-				id: SessionId::default(),
+				id: SessionId::from([1u8; 32]),
 				self_node_id: self_node_id.clone(),
 				master_node_id: self_node_id.clone(),
 				threshold: 0,
 				configured_nodes_count: 1,
 				connected_nodes_count: 1,
 			},
-			access_key: Random.generate().unwrap().secret().clone(),
+			access_key: Random.generate().secret().clone(),
 			key_share: Some(KeyShare {
 				author: Default::default(),
 				threshold: 0,
 				public: Default::default(),
-				common_point: Some(Random.generate().unwrap().public().clone()),
-				encrypted_point: Some(Random.generate().unwrap().public().clone()),
+				common_point: Some(Random.generate().public().clone()),
+				encrypted_point: Some(Random.generate().public().clone()),
 				versions: vec![KeyShareVersion {
 					hash: Default::default(),
 					id_numbers: nodes,
-					secret_share: Random.generate().unwrap().secret().clone(),
+					secret_share: Random.generate().secret().clone(),
 				}],
 			}),
 			acl_storage: Arc::new(InMemoryPermissiveAclStorage::default()),
 			cluster: Arc::new(DummyCluster::new(self_node_id.clone())),
 			nonce: 0,
-		}, Some(Requester::Signature(parity_crypto::publickey::sign(Random.generate().unwrap().secret(), &SessionId::default()).unwrap()))) {
+		};
+		match SessionImpl::new(params, requester) {
 			Ok(_) => (),
 			_ => panic!("unexpected"),
 		}
@@ -1021,20 +1025,20 @@ mod tests {
 		let self_node_id = math::generate_random_address().unwrap();
 		let session = SessionImpl::new(SessionParams {
 			meta: SessionMeta {
-				id: SessionId::default(),
+				id: SessionId::from(DUMMY_SESSION_ID),
 				self_node_id: self_node_id.clone(),
 				master_node_id: self_node_id.clone(),
 				threshold: 0,
 				configured_nodes_count: 1,
 				connected_nodes_count: 1,
 			},
-			access_key: Random.generate().unwrap().secret().clone(),
+			access_key: Random.generate().secret().clone(),
 			key_share: None,
 			acl_storage: Arc::new(InMemoryPermissiveAclStorage::default()),
 			cluster: Arc::new(DummyCluster::new(self_node_id.clone())),
 			nonce: 0,
 		}, Some(Requester::Signature(
-			parity_crypto::publickey::sign(Random.generate().unwrap().secret(), &SessionId::default()).unwrap()
+			parity_crypto::publickey::sign(Random.generate().secret(), &SessionId::from(DUMMY_SESSION_ID)).unwrap()
 		))).unwrap().0;
 		assert_eq!(session.initialize(Default::default(), Default::default(), false, false), Err(Error::InvalidMessage));
 	}
@@ -1043,35 +1047,34 @@ mod tests {
 	fn fails_to_initialize_if_threshold_is_wrong() {
 		let mut nodes = BTreeMap::new();
 		let self_node_id = math::generate_random_address().unwrap();
-		nodes.insert(self_node_id.clone(), Random.generate().unwrap().secret().clone());
-		nodes.insert(math::generate_random_address().unwrap(), Random.generate().unwrap().secret().clone());
+		nodes.insert(self_node_id.clone(), Random.generate().secret().clone());
 		let session = SessionImpl::new(SessionParams {
 			meta: SessionMeta {
-				id: SessionId::default(),
+				id: SessionId::from(DUMMY_SESSION_ID),
 				self_node_id: self_node_id.clone(),
 				master_node_id: self_node_id.clone(),
 				threshold: 2,
 				configured_nodes_count: 1,
 				connected_nodes_count: 1,
 			},
-			access_key: Random.generate().unwrap().secret().clone(),
+			access_key: Random.generate().secret().clone(),
 			key_share: Some(KeyShare {
 				author: Default::default(),
 				threshold: 2,
 				public: Default::default(),
-				common_point: Some(Random.generate().unwrap().public().clone()),
-				encrypted_point: Some(Random.generate().unwrap().public().clone()),
+				common_point: Some(Random.generate().public().clone()),
+				encrypted_point: Some(Random.generate().public().clone()),
 				versions: vec![KeyShareVersion {
 					hash: Default::default(),
 					id_numbers: nodes,
-					secret_share: Random.generate().unwrap().secret().clone(),
+					secret_share: Random.generate().secret().clone(),
 				}],
 			}),
 			acl_storage: Arc::new(InMemoryPermissiveAclStorage::default()),
 			cluster: Arc::new(DummyCluster::new(self_node_id.clone())),
 			nonce: 0,
 		}, Some(Requester::Signature(
-			parity_crypto::publickey::sign(Random.generate().unwrap().secret(), &SessionId::default()).unwrap()
+			parity_crypto::publickey::sign(Random.generate().secret(), &SessionId::from(DUMMY_SESSION_ID)).unwrap()
 		))).unwrap().0;
 		assert_eq!(session.initialize(Default::default(), Default::default(), false, false), Err(Error::ConsensusUnreachable));
 	}
@@ -1088,13 +1091,13 @@ mod tests {
 		let (_, _, _, sessions) = prepare_decryption_sessions();
 		assert_eq!(sessions[0].initialize(Default::default(), Default::default(), false, false).unwrap(), ());
 		assert_eq!(sessions[0].on_consensus_message(sessions[1].node(), &message::DecryptionConsensusMessage {
-				session: SessionId::default().into(),
+				session: SessionId::from(DUMMY_SESSION_ID).into(),
 				sub_session: sessions[0].access_key().clone().into(),
 				session_nonce: 0,
 				origin: None,
 				message: message::ConsensusMessage::InitializeConsensusSession(message::InitializeConsensusSession {
 					requester: Requester::Signature(parity_crypto::publickey::sign(
-						Random.generate().unwrap().secret(), &SessionId::default()).unwrap()).into(),
+						Random.generate().secret(), &SessionId::from(DUMMY_SESSION_ID)).unwrap()).into(),
 					version: Default::default(),
 				}),
 			}).unwrap_err(), Error::InvalidMessage);
@@ -1104,21 +1107,21 @@ mod tests {
 	fn fails_to_partial_decrypt_if_requested_by_slave() {
 		let (_, _, _, sessions) = prepare_decryption_sessions();
 		assert_eq!(sessions[1].on_consensus_message(sessions[0].node(), &message::DecryptionConsensusMessage {
-				session: SessionId::default().into(),
+				session: SessionId::from(DUMMY_SESSION_ID).into(),
 				sub_session: sessions[0].access_key().clone().into(),
 				session_nonce: 0,
 				origin: None,
 				message: message::ConsensusMessage::InitializeConsensusSession(message::InitializeConsensusSession {
-					requester: Requester::Signature(parity_crypto::publickey::sign(Random.generate().unwrap().secret(),
-						&SessionId::default()).unwrap()).into(),
+					requester: Requester::Signature(parity_crypto::publickey::sign(Random.generate().secret(),
+						&SessionId::from(DUMMY_SESSION_ID)).unwrap()).into(),
 					version: Default::default(),
 				}),
 		}).unwrap(), ());
 		assert_eq!(sessions[1].on_partial_decryption_requested(sessions[2].node(), &message::RequestPartialDecryption {
-			session: SessionId::default().into(),
+			session: SessionId::from(DUMMY_SESSION_ID).into(),
 			sub_session: sessions[0].access_key().clone().into(),
 			session_nonce: 0,
-			request_id: Random.generate().unwrap().secret().clone().into(),
+			request_id: Random.generate().secret().clone().into(),
 			is_shadow_decryption: false,
 			is_broadcast_session: false,
 			nodes: sessions.iter().map(|s| s.node().clone().into()).take(4).collect(),
@@ -1129,21 +1132,21 @@ mod tests {
 	fn fails_to_partial_decrypt_if_wrong_number_of_nodes_participating() {
 		let (_, _, _, sessions) = prepare_decryption_sessions();
 		assert_eq!(sessions[1].on_consensus_message(sessions[0].node(), &message::DecryptionConsensusMessage {
-				session: SessionId::default().into(),
+				session: SessionId::from(DUMMY_SESSION_ID).into(),
 				sub_session: sessions[0].access_key().clone().into(),
 				session_nonce: 0,
 				origin: None,
 				message: message::ConsensusMessage::InitializeConsensusSession(message::InitializeConsensusSession {
-					requester: Requester::Signature(parity_crypto::publickey::sign(Random.generate().unwrap().secret(),
-						&SessionId::default()).unwrap()).into(),
+					requester: Requester::Signature(parity_crypto::publickey::sign(Random.generate().secret(),
+						&SessionId::from(DUMMY_SESSION_ID)).unwrap()).into(),
 					version: Default::default(),
 				}),
 		}).unwrap(), ());
 		assert_eq!(sessions[1].on_partial_decryption_requested(sessions[0].node(), &message::RequestPartialDecryption {
-			session: SessionId::default().into(),
+			session: SessionId::from(DUMMY_SESSION_ID).into(),
 			sub_session: sessions[0].access_key().clone().into(),
 			session_nonce: 0,
-			request_id: Random.generate().unwrap().secret().clone().into(),
+			request_id: Random.generate().secret().clone().into(),
 			is_shadow_decryption: false,
 			is_broadcast_session: false,
 			nodes: sessions.iter().map(|s| s.node().clone().into()).take(2).collect(),
@@ -1154,11 +1157,11 @@ mod tests {
 	fn fails_to_accept_partial_decrypt_if_not_waiting() {
 		let (_, _, _, sessions) = prepare_decryption_sessions();
 		assert_eq!(sessions[0].on_partial_decryption(sessions[1].node(), &message::PartialDecryption {
-			session: SessionId::default().into(),
+			session: SessionId::from(DUMMY_SESSION_ID).into(),
 			sub_session: sessions[0].access_key().clone().into(),
 			session_nonce: 0,
-			request_id: Random.generate().unwrap().secret().clone().into(),
-			shadow_point: Random.generate().unwrap().public().clone().into(),
+			request_id: Random.generate().secret().clone().into(),
+			shadow_point: Random.generate().public().clone().into(),
 			decrypt_shadow: None,
 		}).unwrap_err(), Error::InvalidStateForRequest);
 	}
@@ -1209,9 +1212,9 @@ mod tests {
 	#[test]
 	fn session_does_not_fail_if_rejected_node_disconnects() {
 		let (_, clusters, acl_storages, sessions) = prepare_decryption_sessions();
-		let key_pair = Random.generate().unwrap();
+		let key_pair = Random.generate();
 
-		acl_storages[1].forbid(public_to_address(key_pair.public()), SessionId::default());
+		acl_storages[1].forbid(public_to_address(key_pair.public()), SessionId::from(DUMMY_SESSION_ID));
 		sessions[0].initialize(Default::default(), Default::default(), false, false).unwrap();
 
 		do_messages_exchange_until(&clusters, &sessions, |_, _, _| sessions[0].state() == ConsensusSessionState::WaitingForPartialResults).unwrap();
@@ -1344,8 +1347,9 @@ mod tests {
 
 		// we need 4 out of 5 nodes to agree to do a decryption
 		// let's say that 2 of these nodes are disagree
-		acl_storages[1].forbid(public_to_address(key_pair.public()), SessionId::default());
-		acl_storages[2].forbid(public_to_address(key_pair.public()), SessionId::default());
+		let document = [1u8; 32].into();
+		acl_storages[1].forbid(public_to_address(key_pair.public()), document);
+		acl_storages[2].forbid(public_to_address(key_pair.public()), document);
 
 		assert_eq!(do_messages_exchange(&clusters, &sessions).unwrap_err(), Error::ConsensusUnreachable);
 
@@ -1360,7 +1364,7 @@ mod tests {
 
 		// we need 4 out of 5 nodes to agree to do a decryption
 		// let's say that 1 of these nodes (master) is disagree
-		acl_storages[0].forbid(public_to_address(key_pair.public()), SessionId::default());
+		acl_storages[0].forbid(public_to_address(key_pair.public()), SessionId::from(DUMMY_SESSION_ID));
 
 		// now let's try to do a decryption
 		sessions[0].initialize(Default::default(), Default::default(), false, false).unwrap();
@@ -1384,7 +1388,7 @@ mod tests {
 		let (_, _, _, sessions) = prepare_decryption_sessions();
 		assert_eq!(sessions[1].process_message(sessions[0].node(), &message::DecryptionMessage::DecryptionSessionCompleted(
 			message::DecryptionSessionCompleted {
-				session: SessionId::default().into(),
+				session: SessionId::from(DUMMY_SESSION_ID).into(),
 				sub_session: sessions[0].access_key().clone().into(),
 				session_nonce: 10,
 			}

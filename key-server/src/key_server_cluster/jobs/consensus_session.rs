@@ -1,18 +1,18 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::BTreeSet;
 use crate::key_server_cluster::{Error, NodeId, SessionMeta, Requester};
@@ -368,7 +368,7 @@ impl<ConsensusExecutor, ConsensusTransport, ComputationExecutor, ComputationTran
 mod tests {
 	use std::sync::Arc;
 	use parity_crypto::publickey::{KeyPair, Random, Generator, sign, public_to_address};
-	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
+	use primitives::acl_storage::InMemoryPermissiveAclStorage;
 	use crate::key_server_cluster::{Error, NodeId, SessionId, Requester};
 	use crate::key_server_cluster::message::{ConsensusMessage, InitializeConsensusSession, ConfirmConsensusInitialization};
 	use crate::key_server_cluster::jobs::job_session::tests::{make_master_session_meta, make_slave_session_meta, SquaredSumJobExecutor, DummyJobTransport};
@@ -378,11 +378,14 @@ mod tests {
 	type SquaredSumConsensusSession = ConsensusSession<KeyAccessJob, DummyJobTransport<Requester, bool>, SquaredSumJobExecutor, DummyJobTransport<u32, u32>>;
 
 	fn make_master_consensus_session(threshold: usize, requester: Option<KeyPair>, acl_storage: Option<InMemoryPermissiveAclStorage>) -> SquaredSumConsensusSession {
-		let secret = requester.map(|kp| kp.secret().clone()).unwrap_or(Random.generate().unwrap().secret().clone());
+		let secret = requester.map(|kp| kp.secret().clone()).unwrap_or(Random.generate().secret().clone());
 		SquaredSumConsensusSession::new(ConsensusSessionParams {
 			meta: make_master_session_meta(threshold),
-			consensus_executor: KeyAccessJob::new_on_master(SessionId::default(), Arc::new(acl_storage.unwrap_or(InMemoryPermissiveAclStorage::default())),
-				sign(&secret, &SessionId::default()).unwrap().into()),
+			consensus_executor: KeyAccessJob::new_on_master(
+				SessionId::from([1u8; 32]),
+				Arc::new(acl_storage.unwrap_or(InMemoryPermissiveAclStorage::default())),
+				sign(&secret, &SessionId::from([1u8; 32])).unwrap().into()
+			),
 			consensus_transport: DummyJobTransport::default(),
 		}).unwrap()
 	}
@@ -390,7 +393,10 @@ mod tests {
 	fn make_slave_consensus_session(threshold: usize, acl_storage: Option<InMemoryPermissiveAclStorage>) -> SquaredSumConsensusSession {
 		SquaredSumConsensusSession::new(ConsensusSessionParams {
 			meta: make_slave_session_meta(threshold),
-			consensus_executor: KeyAccessJob::new_on_slave(SessionId::default(), Arc::new(acl_storage.unwrap_or(InMemoryPermissiveAclStorage::default()))),
+			consensus_executor: KeyAccessJob::new_on_slave(
+				SessionId::from([1u8; 32]),
+				Arc::new(acl_storage.unwrap_or(InMemoryPermissiveAclStorage::default())),
+			),
 			consensus_transport: DummyJobTransport::default(),
 		}).unwrap()
 	}
@@ -419,9 +425,9 @@ mod tests {
 
 	#[test]
 	fn consensus_session_consensus_is_not_reached_when_initializes_with_zero_threshold_and_master_rejects() {
-		let requester = Random.generate().unwrap();
+		let requester = Random.generate();
 		let acl_storage = InMemoryPermissiveAclStorage::default();
-		acl_storage.forbid(public_to_address(requester.public()), SessionId::default());
+		acl_storage.forbid(public_to_address(requester.public()), SessionId::from([1u8; 32]));
 
 		let mut session = make_master_consensus_session(0, Some(requester), Some(acl_storage));
 		session.initialize(vec![NodeId::from_low_u64_be(1), NodeId::from_low_u64_be(2)].into_iter().collect()).unwrap();
@@ -434,9 +440,9 @@ mod tests {
 
 	#[test]
 	fn consensus_session_consensus_is_failed_by_master_node() {
-		let requester = Random.generate().unwrap();
+		let requester = Random.generate();
 		let acl_storage = InMemoryPermissiveAclStorage::default();
-		acl_storage.forbid(public_to_address(requester.public()), SessionId::default());
+		acl_storage.forbid(public_to_address(requester.public()), SessionId::from([1u8; 32]));
 
 		let mut session = make_master_consensus_session(1, Some(requester), Some(acl_storage));
 		assert_eq!(session.initialize(vec![NodeId::from_low_u64_be(1), NodeId::from_low_u64_be(2)].into_iter().collect()).unwrap_err(), Error::ConsensusUnreachable);
@@ -476,9 +482,9 @@ mod tests {
 
 	#[test]
 	fn consensus_session_job_dissemination_does_not_select_master_node_if_rejected() {
-		let requester = Random.generate().unwrap();
+		let requester = Random.generate();
 		let acl_storage = InMemoryPermissiveAclStorage::default();
-		acl_storage.forbid(public_to_address(requester.public()), SessionId::default());
+		acl_storage.forbid(public_to_address(requester.public()), SessionId::from([1u8; 32]));
 
 		let mut session = make_master_consensus_session(0, Some(requester), Some(acl_storage));
 		session.initialize(vec![NodeId::from_low_u64_be(1), NodeId::from_low_u64_be(2)].into_iter().collect()).unwrap();
@@ -509,7 +515,7 @@ mod tests {
 		let mut session = make_slave_consensus_session(0, None);
 		assert_eq!(session.state(), ConsensusSessionState::WaitingForInitialization);
 		session.on_consensus_message(&NodeId::from_low_u64_be(1), &ConsensusMessage::InitializeConsensusSession(InitializeConsensusSession {
-			requester: Requester::Signature(sign(Random.generate().unwrap().secret(), &SessionId::default()).unwrap()).into(),
+			requester: Requester::Signature(sign(Random.generate().secret(), &SessionId::from([1u8; 32])).unwrap()).into(),
 			version: Default::default(),
 		})).unwrap();
 		assert_eq!(session.state(), ConsensusSessionState::ConsensusEstablished);
@@ -522,7 +528,7 @@ mod tests {
 		let mut session = make_slave_consensus_session(0, None);
 		assert_eq!(session.state(), ConsensusSessionState::WaitingForInitialization);
 		session.on_consensus_message(&NodeId::from_low_u64_be(1), &ConsensusMessage::InitializeConsensusSession(InitializeConsensusSession {
-			requester: Requester::Signature(sign(Random.generate().unwrap().secret(), &SessionId::default()).unwrap()).into(),
+			requester: Requester::Signature(sign(Random.generate().secret(), &SessionId::from([1u8; 32])).unwrap()).into(),
 			version: Default::default(),
 		})).unwrap();
 		assert_eq!(session.state(), ConsensusSessionState::ConsensusEstablished);
@@ -552,7 +558,7 @@ mod tests {
 	fn consessus_session_completion_is_accepted() {
 		let mut session = make_slave_consensus_session(0, None);
 		session.on_consensus_message(&NodeId::from_low_u64_be(1), &ConsensusMessage::InitializeConsensusSession(InitializeConsensusSession {
-			requester: Requester::Signature(sign(Random.generate().unwrap().secret(), &SessionId::default()).unwrap()).into(),
+			requester: Requester::Signature(sign(Random.generate().secret(), &SessionId::from([1u8; 32])).unwrap()).into(),
 			version: Default::default(),
 		})).unwrap();
 		session.on_session_completed(&NodeId::from_low_u64_be(1)).unwrap();

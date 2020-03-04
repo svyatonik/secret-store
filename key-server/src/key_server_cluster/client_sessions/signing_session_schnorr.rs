@@ -1,18 +1,18 @@
-// Copyright 2015-2019 Parity Technologies (UK) Ltd.
-// This file is part of Parity Ethereum.
+// Copyright 2015-2020 Parity Technologies (UK) Ltd.
+// This file is part of Parity Secret Store.
 
-// Parity Ethereum is free software: you can redistribute it and/or modify
+// Parity Secret Store is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Parity Ethereum is distributed in the hope that it will be useful,
+// Parity Secret Store is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
+// along with Parity Secret Store.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -21,8 +21,7 @@ use parking_lot::Mutex;
 use parity_crypto::publickey::{Public, Secret};
 use ethereum_types::H256;
 use log::warn;
-use parity_secretstore_primitives::acl_storage::AclStorage;
-use parity_secretstore_primitives::key_storage::KeyShare;
+use primitives::{acl_storage::AclStorage, key_storage::KeyShare};
 use crate::key_server_cluster::{Error, NodeId, SessionId, Requester, SessionMeta};
 use crate::key_server_cluster::cluster::{Cluster};
 use crate::key_server_cluster::cluster_sessions::{SessionIdWithSubSession, ClusterSession, CompletionSignal};
@@ -823,8 +822,7 @@ mod tests {
 	use std::collections::BTreeMap;
 	use ethereum_types::{Address, H256};
 	use parity_crypto::publickey::{Random, Generator, Public, Secret, public_to_address};
-	use parity_secretstore_primitives::acl_storage::InMemoryPermissiveAclStorage;
-	use parity_secretstore_primitives::key_storage::KeyStorage;
+	use primitives::{acl_storage::InMemoryPermissiveAclStorage, key_storage::KeyStorage};
 	use crate::key_server_cluster::{SessionId, Requester, SessionMeta, Error};
 	use crate::key_server_cluster::cluster::tests::MessageLoop as ClusterMessageLoop;
 	use crate::key_server_cluster::generation_session::tests::MessageLoop as GenerationMessageLoop;
@@ -846,19 +844,21 @@ mod tests {
 		}
 
 		pub fn into_session(&self, at_node: usize) -> SessionImpl {
-			let requester = Some(Requester::Signature(parity_crypto::publickey::sign(Random.generate().unwrap().secret(),
-				&SessionId::default()).unwrap()));
+			let requester = Some(Requester::Signature(
+				parity_crypto::publickey::sign(Random.generate().secret(), &SessionId::from([1u8; 32])).unwrap())
+			);
+			let dummy_doc = [1u8; 32].into();
 			SessionImpl::new(SessionParams {
 				meta: SessionMeta {
-					id: SessionId::default(),
+					id: SessionId::from([1u8; 32]),
 					self_node_id: self.0.node(at_node),
 					master_node_id: self.0.node(0),
-					threshold: self.0.key_storage(at_node).get(&Default::default()).unwrap().unwrap().threshold,
+					threshold: self.0.key_storage(at_node).get(&dummy_doc).unwrap().unwrap().threshold,
 					configured_nodes_count: self.0.nodes().len(),
 					connected_nodes_count: self.0.nodes().len(),
 				},
-				access_key: Random.generate().unwrap().secret().clone(),
-				key_share: self.0.key_storage(at_node).get(&Default::default()).unwrap(),
+				access_key: Random.generate().secret().clone(),
+				key_share: self.0.key_storage(at_node).get(&dummy_doc).unwrap(),
 				acl_storage: Arc::new(InMemoryPermissiveAclStorage::default()),
 				cluster: self.0.cluster(0).view().unwrap(),
 				nonce: 0,
@@ -867,13 +867,14 @@ mod tests {
 
 		pub fn init_with_version(self, key_version: Option<H256>) -> Result<(Self, Public, H256), Error> {
 			let message_hash = H256::random();
-			let requester = Random.generate().unwrap();
-			let signature = parity_crypto::publickey::sign(requester.secret(), &SessionId::default()).unwrap();
+			let requester = Random.generate();
+			let signature = parity_crypto::publickey::sign(requester.secret(), &SessionId::from([1u8; 32])).unwrap();
 			self.0.cluster(0).client().new_schnorr_signing_session(
-				Default::default(),
+				SessionId::from([1u8; 32]),
 				signature.into(),
 				key_version,
-				message_hash).map(|_| (self, *requester.public(), message_hash))
+				message_hash).map(|_| (self, *requester.public(), message_hash)
+			)
 		}
 
 		pub fn init(self) -> Result<(Self, Public, H256), Error> {
@@ -882,7 +883,8 @@ mod tests {
 		}
 
 		pub fn init_delegated(self) -> Result<(Self, Public, H256), Error> {
-			self.0.key_storage(0).remove(&Default::default()).unwrap();
+			let doc = [1u8; 32].into();
+			self.0.key_storage(0).remove(&doc).unwrap();
 			self.init_with_version(None)
 		}
 
@@ -893,7 +895,8 @@ mod tests {
 
 		pub fn init_without_share(self) -> Result<(Self, Public, H256), Error> {
 			let key_version = self.key_version();
-			self.0.key_storage(0).remove(&Default::default()).unwrap();
+			let doc = [1u8; 32].into();
+			self.0.key_storage(0).remove(&doc).unwrap();
 			self.init_with_version(Some(key_version))
 		}
 
@@ -907,7 +910,8 @@ mod tests {
 		}
 
 		pub fn key_version(&self) -> H256 {
-			self.0.key_storage(0).get(&Default::default())
+			let doc = [1u8; 32].into();
+			self.0.key_storage(0).get(&doc)
 				.unwrap().unwrap().versions.iter().last().unwrap().hash
 		}
 	}
@@ -919,7 +923,8 @@ mod tests {
 			let (ml, _, message) = MessageLoop::new(num_nodes, threshold).unwrap().init().unwrap();
 			ml.0.loop_until(|| ml.0.is_empty());
 
-			let signer_public = ml.0.key_storage(0).get(&Default::default()).unwrap().unwrap().public;
+			let doc = [1u8; 32].into();
+			let signer_public = ml.0.key_storage(0).get(&doc).unwrap().unwrap().public;
 			let signature = ml.session_at(0).wait().unwrap();
 			assert!(math::verify_schnorr_signature(&signer_public, &signature, &message).unwrap());
 		}
@@ -975,7 +980,7 @@ mod tests {
 		let ml = MessageLoop::new(3, 1).unwrap();
 		let session = ml.into_session(0);
 		assert_eq!(session.on_consensus_message(&ml.0.node(1), &SchnorrSigningConsensusMessage {
-			session: SessionId::default().into(),
+			session: SessionId::from([1u8; 32]).into(),
 			sub_session: session.core.access_key.clone().into(),
 			session_nonce: 0,
 			message: ConsensusMessage::ConfirmConsensusInitialization(ConfirmConsensusInitialization {
@@ -989,11 +994,11 @@ mod tests {
 		let ml = MessageLoop::new(3, 1).unwrap();
 		let session = ml.into_session(0);
 		assert_eq!(session.on_generation_message(&ml.0.node(1), &SchnorrSigningGenerationMessage {
-			session: SessionId::default().into(),
+			session: SessionId::from([1u8; 32]).into(),
 			sub_session: session.core.access_key.clone().into(),
 			session_nonce: 0,
 			message: GenerationMessage::ConfirmInitialization(ConfirmInitialization {
-				session: SessionId::default().into(),
+				session: SessionId::from([1u8; 32]).into(),
 				session_nonce: 0,
 				derived_point: Public::default().into(),
 			}),
@@ -1010,11 +1015,11 @@ mod tests {
 		let slave1_session = ml.session_at(1);
 
 		assert_eq!(slave1_session.on_generation_message(&slave2_id, &SchnorrSigningGenerationMessage {
-			session: SessionId::default().into(),
+			session: SessionId::from([1u8; 32]).into(),
 			sub_session: session.core.access_key.clone().into(),
 			session_nonce: 0,
 			message: GenerationMessage::InitializeSession(InitializeSession {
-				session: SessionId::default().into(),
+				session: SessionId::from([1u8; 32]).into(),
 				session_nonce: 0,
 				origin: None,
 				author: Address::zero().into(),
@@ -1031,7 +1036,7 @@ mod tests {
 		let ml = MessageLoop::new(3, 1).unwrap();
 		let session = ml.into_session(1);
 		assert_eq!(session.on_partial_signature_requested(&ml.0.node(0), &SchnorrRequestPartialSignature {
-			session: SessionId::default().into(),
+			session: SessionId::from([1u8; 32]).into(),
 			sub_session: session.core.access_key.clone().into(),
 			session_nonce: 0,
 			request_id: Secret::from_str("0000000000000000000000000000000000000000000000000000000000000001").unwrap().into(),
@@ -1045,7 +1050,7 @@ mod tests {
 		let ml = MessageLoop::new(3, 1).unwrap();
 		let session = ml.into_session(0);
 		assert_eq!(session.on_partial_signature_requested(&ml.0.node(1), &SchnorrRequestPartialSignature {
-			session: SessionId::default().into(),
+			session: SessionId::from([1u8; 32]).into(),
 			sub_session: session.core.access_key.clone().into(),
 			session_nonce: 0,
 			request_id: Secret::from_str("0000000000000000000000000000000000000000000000000000000000000001").unwrap().into(),
@@ -1060,8 +1065,8 @@ mod tests {
 
 		// we need at least 2-of-3 nodes to agree to reach consensus
 		// let's say 2 of 3 nodes disagee
-		ml.0.acl_storage(1).forbid(public_to_address(&requester), SessionId::default());
-		ml.0.acl_storage(2).forbid(public_to_address(&requester), SessionId::default());
+		ml.0.acl_storage(1).forbid(public_to_address(&requester), SessionId::from([1u8; 32]));
+		ml.0.acl_storage(2).forbid(public_to_address(&requester), SessionId::from([1u8; 32]));
 
 		// then consensus is unreachable
 		ml.0.loop_until(|| ml.0.is_empty());
@@ -1073,8 +1078,8 @@ mod tests {
 		let (ml, requester, _) = MessageLoop::new(3, 1).unwrap().init().unwrap();
 
 		// we need at least 2-of-3 nodes to agree to reach consensus
-		// let's say 1 of 3 nodes disagee
-		ml.0.acl_storage(1).forbid(public_to_address(&requester), SessionId::default());
+		// let's say 1 of 3 nodes disagree
+		ml.0.acl_storage(1).forbid(public_to_address(&requester), SessionId::from([1u8; 32]));
 
 		// then consensus reachable, but single node will disagree
 		ml.ensure_completed();
@@ -1085,8 +1090,8 @@ mod tests {
 		let (ml, requester, _) = MessageLoop::new(3, 1).unwrap().init().unwrap();
 
 		// we need at least 2-of-3 nodes to agree to reach consensus
-		// let's say 1 of 3 nodes disagee
-		ml.0.acl_storage(0).forbid(public_to_address(&requester), SessionId::default());
+		// let's say 1 of 3 nodes disagree
+		ml.0.acl_storage(0).forbid(public_to_address(&requester), SessionId::from([1u8; 32]));
 
 		// then consensus reachable, but single node will disagree
 		ml.ensure_completed();
@@ -1097,11 +1102,11 @@ mod tests {
 		let ml = MessageLoop::new(3, 1).unwrap();
 		let session = ml.into_session(1);
 		let msg = SchnorrSigningMessage::SchnorrSigningGenerationMessage(SchnorrSigningGenerationMessage {
-			session: SessionId::default().into(),
+			session: SessionId::from([1u8; 32]).into(),
 			sub_session: session.core.access_key.clone().into(),
 			session_nonce: 10,
 			message: GenerationMessage::ConfirmInitialization(ConfirmInitialization {
-				session: SessionId::default().into(),
+				session: SessionId::from([1u8; 32]).into(),
 				session_nonce: 0,
 				derived_point: Public::default().into(),
 			}),
